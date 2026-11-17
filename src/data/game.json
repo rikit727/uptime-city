@@ -1,0 +1,13 @@
+{
+  "mapSize": 128,
+  "metresPerTile": 25,
+  "startingCash": 250000,
+  "startMinute": 360,
+  "ticksPerRealSecondAt1x": 2,
+  "speeds": [0, 1, 2, 4],
+  "agriculturalEdgeBand": 20,
+  "river": {
+    "minWidth": 3,
+    "maxWidth": 5
+  }
+}

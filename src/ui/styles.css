@@ -1,0 +1,404 @@
+/* Uptime City HUD. System fonts only: no external fonts at runtime. */
+:root {
+  --panel: rgba(22, 32, 42, 0.88);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --text: #e8eef3;
+  --muted: #9fb0bf;
+  --accent: #4fb3a9;
+  --accent-strong: #2e8c83;
+  --danger: #d0574a;
+  --warn: #e0a83c;
+  --good: #58b368;
+  --radius: 8px;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  font-size: 14px;
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #1d2b36;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+canvas.view {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud > * {
+  pointer-events: auto;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button.active,
+button.primary {
+  background: var(--accent-strong);
+  border-color: var(--accent);
+}
+
+button.danger:hover {
+  background: var(--danger);
+}
+
+kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--muted);
+}
+
+/* ---- top bar ---- */
+.topbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 12px;
+}
+
+.topbar .title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.topbar .time,
+.topbar .cash {
+  font-variant-numeric: tabular-nums;
+  min-width: 110px;
+}
+
+.topbar .cash.negative {
+  color: var(--danger);
+}
+
+.speeds {
+  display: flex;
+  gap: 4px;
+}
+
+.speeds button {
+  min-width: 38px;
+}
+
+.menu-buttons {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+/* ---- toolbar ---- */
+.toolbar {
+  position: absolute;
+  top: 64px;
+  left: 10px;
+  width: 172px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-group-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 6px 2px 2px;
+}
+
+.tool-group-label:first-child {
+  margin-top: 0;
+}
+
+button.tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+
+.tool-label {
+  flex: 1;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.density-bar {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.density-bar button {
+  flex: 1;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+/* ---- status line ---- */
+.status {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--panel);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.status-error {
+  color: #ffb4a8;
+}
+
+/* ---- inspector ---- */
+.inspector {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 260px;
+  padding: 10px 14px;
+}
+
+.inspector h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.inspector dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  margin: 0;
+}
+
+.inspector dt {
+  color: var(--muted);
+}
+
+.inspector dd {
+  margin: 0;
+}
+
+/* ---- toasts ---- */
+.toasts {
+  position: absolute;
+  top: 64px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--panel);
+  border-left: 4px solid var(--accent);
+  padding: 8px 12px;
+  border-radius: 6px;
+  max-width: 340px;
+  transition:
+    opacity 0.3s,
+    transform 0.3s;
+}
+
+.toast-good {
+  border-color: var(--good);
+}
+
+.toast-warn {
+  border-color: var(--warn);
+}
+
+.toast-error {
+  border-color: var(--danger);
+}
+
+.toast-out {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+/* ---- modals ---- */
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 10, 15, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  background: #1b2833;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  padding: 16px 20px 20px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.modal-close {
+  font-size: 20px;
+  line-height: 1;
+  padding: 2px 9px;
+}
+
+.modal-body p {
+  line-height: 1.45;
+}
+
+.modal-body ol {
+  padding-left: 20px;
+  line-height: 1.5;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: #ffb4a8;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.field input {
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 5px 8px;
+  width: 160px;
+}
+
+.slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.slot-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slot-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+table.controls {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+table.controls td {
+  padding: 3px 6px;
+  vertical-align: top;
+}
+
+table.controls td:first-child {
+  white-space: nowrap;
+}

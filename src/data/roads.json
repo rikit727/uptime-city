@@ -1,0 +1,36 @@
+{
+  "bridgeCostMultiplier": 5,
+  "demolishCostPerTile": 20,
+  "classes": [
+    {
+      "id": "local",
+      "code": 1,
+      "name": "Local road",
+      "lanes": 2,
+      "capacityVehPerHour": 600,
+      "speedKmh": 30,
+      "costPerTile": 60,
+      "colour": "#5c6570"
+    },
+    {
+      "id": "avenue",
+      "code": 2,
+      "name": "Avenue",
+      "lanes": 4,
+      "capacityVehPerHour": 1600,
+      "speedKmh": 50,
+      "costPerTile": 160,
+      "colour": "#474e57"
+    },
+    {
+      "id": "highway",
+      "code": 3,
+      "name": "Highway",
+      "lanes": 6,
+      "capacityVehPerHour": 4000,
+      "speedKmh": 100,
+      "costPerTile": 420,
+      "colour": "#33383f"
+    }
+  ]
+}
