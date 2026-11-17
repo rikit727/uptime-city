@@ -1,6 +1,6 @@
 # Build prompt: Uptime City (v1)
 
-> Commit this file to the repo as `docs/BUILD_PROMPT.md`, then start Claude Code (Fable) with: "Read docs/BUILD_PROMPT.md and follow it." Do not edit or delete this file during the build.
+> This is the master spec. The build runs across several Claude Code sessions, ideally one milestone per session. Do not edit or delete this file during the build.
 
 ---
 
@@ -19,8 +19,15 @@ UI text is in British English, money is in £, and units are metric.
 3. If the budget gets tight, finish fewer systems properly rather than leave many half-built. Never leave the build broken. Record anything cut in `ROADMAP.md`.
    - Milestones 1–5 are essential.
    - If something has to go, cut in this order: events calendar, then landmarks other than the stadium and shopping centre, then noise pollution, then glasshouses, then the 4th scenario.
-4. A different model will continue this codebase later. Optimise for readability, clear module boundaries and documentation.
+4. Future sessions will continue this codebase with no memory of earlier ones. Optimise for readability, clear module boundaries and documentation.
 5. Work autonomously. Don't stop to ask questions: make a sensible call and record it in a decision log section of `ARCHITECTURE.md`.
+6. **Build across sessions.** Each session does one milestone (two if they are small). Keep `PROGRESS.md` up to date at the repo root, covering:
+   - which milestones are done
+   - what is in progress
+   - known issues
+   - the exact next step
+
+   At the start of every session, read `PROGRESS.md`, `CLAUDE.md` and this file, then continue from the next unfinished milestone. At the end of every session, update `PROGRESS.md` and commit.
 
 ## Tech stack (fixed)
 
@@ -166,20 +173,21 @@ Vitest unit tests for every sim system, covering at least:
 
 ## Milestones (in order)
 
-1. Scaffold, PWA, CI and Pages workflows, grid, camera, roads and zoning tools, save and load
+1. Scaffold, PWA, CI and Pages workflows, grid, camera, roads and zoning tools, save and load. Create first versions of `ARCHITECTURE.md`, `CLAUDE.md` and `PROGRESS.md` in this milestone, and keep them updated in every later one.
 2. Sim core: time, seasons and weather, growth (including farms), power
 3. Water, wastewater, pressure zones, irrigation
 4. Asset condition, incidents, crews, work orders
 5. Traffic, roadworks, permits
 6. Services (including fire and hydrants, and waste), landmarks, events calendar, pollution, economy, happiness, complaints feed
 7. Overlays, dashboard, menus and settings, scenarios, UI polish
-8. Performance pass and handover docs
+8. Performance pass and final review of all docs
 
 ## Handover deliverables
 
 - `README.md`: how to run, build, deploy as a static site and install the PWA.
 - `ARCHITECTURE.md`: modules, data flow, sim tick order, save format.
 - `CLAUDE.md`: conventions, plus step-by-step guides for adding a building, an asset type, a sim system and a scenario. Include the test and lint commands.
+- `PROGRESS.md`: current milestone status and the exact next step.
 - `ROADMAP.md`: anything cut, plus planned items: public transport, terrain and elevation, a deeper hydraulic model, leak detection from night flows, natural disasters such as flooding, and audio.
 
 ## Out of scope for v1
