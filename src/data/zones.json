@@ -1,0 +1,54 @@
+{
+  "densities": [
+    { "id": "low", "code": 1, "name": "Low density" },
+    { "id": "medium", "code": 2, "name": "Medium density" },
+    { "id": "high", "code": 3, "name": "High density" }
+  ],
+  "types": [
+    {
+      "id": "residential",
+      "code": 1,
+      "name": "Residential",
+      "hasDensity": true,
+      "edgeOnly": false,
+      "costPerTile": 5,
+      "colours": { "low": "#9fd89a", "medium": "#5fbf5a", "high": "#2f8f3a" }
+    },
+    {
+      "id": "commercial",
+      "code": 2,
+      "name": "Commercial",
+      "hasDensity": true,
+      "edgeOnly": false,
+      "costPerTile": 5,
+      "colours": { "low": "#9cc4ef", "medium": "#5a9be0", "high": "#2a6cbf" }
+    },
+    {
+      "id": "office",
+      "code": 3,
+      "name": "Office",
+      "hasDensity": true,
+      "edgeOnly": false,
+      "costPerTile": 5,
+      "colours": { "low": "#c9b3ec", "medium": "#a07fdc", "high": "#7350b8" }
+    },
+    {
+      "id": "industrial",
+      "code": 4,
+      "name": "Industrial",
+      "hasDensity": true,
+      "edgeOnly": false,
+      "costPerTile": 5,
+      "colours": { "low": "#f2d27a", "medium": "#e3b23c", "high": "#b98414" }
+    },
+    {
+      "id": "agricultural",
+      "code": 5,
+      "name": "Agricultural",
+      "hasDensity": false,
+      "edgeOnly": true,
+      "costPerTile": 2,
+      "colours": { "low": "#c8b27a", "medium": "#c8b27a", "high": "#c8b27a" }
+    }
+  ]
+}
