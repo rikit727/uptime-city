@@ -12,6 +12,8 @@ import { createInitialState } from './state';
 import type { NewGameOptions, SimState } from './state';
 import { SYSTEMS } from './systems';
 import type { TickContext } from './systems';
+import type { Building, Estate, GameRules, PowerNetwork, PowerStats, WeatherState } from './state';
+import type { ZoneId } from './types';
 import type { WorldState } from './world';
 
 /** Bumped whenever a layer changes, so renderers rebuild only what changed. */
@@ -29,18 +31,44 @@ export interface SimSnapshot {
   readonly minute: number;
   readonly cash: number;
   readonly seed: number;
+  readonly rules: Readonly<GameRules>;
   readonly world: Readonly<WorldState>;
   readonly revisions: Readonly<Revisions>;
+  readonly buildings: readonly Building[];
+  /** Tile -> building id (0 = none). */
+  readonly buildingAt: Int32Array;
+  readonly buildingById: ReadonlyMap<number, Building>;
+  readonly estates: readonly Estate[];
+  /** Tile -> estate id (0 = none). */
+  readonly estateAt: Int32Array;
+  readonly weather: Readonly<WeatherState>;
+  readonly demand: Readonly<Record<ZoneId, number>>;
+  readonly power: Readonly<PowerStats>;
+  readonly network: Readonly<PowerNetwork>;
+  /** Building id -> load (kW) and facility id -> output (MW) at the last dispatch. */
+  readonly loadKw: ReadonlyMap<number, number>;
+  readonly outputMW: ReadonlyMap<number, number>;
 }
 
 export class Simulation {
-  readonly revisions: Revisions = { terrain: 0, road: 0, zone: 0 };
+  readonly revisions: Revisions = {
+    terrain: 0,
+    road: 0,
+    zone: 0,
+    building: 0,
+    power: 0,
+    supply: 0,
+  };
   readonly commandLog: LoggedCommand[] = [];
   private events: SimEvent[] = [];
   private readonly ctx: TickContext;
 
   constructor(readonly state: SimState) {
-    this.ctx = { state, emit: (e) => this.events.push(e) };
+    this.ctx = {
+      state,
+      emit: (e) => this.events.push(e),
+      touch: (layer) => this.revisions[layer]++,
+    };
   }
 
   static newGame(opts: NewGameOptions): Simulation {
@@ -89,8 +117,20 @@ export class Simulation {
       minute: s.minute,
       cash: s.cash,
       seed: s.seed,
+      rules: s.rules,
       world: s.world,
       revisions: this.revisions,
+      buildings: s.buildings,
+      buildingAt: s.cache.buildingAt,
+      buildingById: s.cache.byId,
+      estates: s.estates,
+      estateAt: s.cache.estateAt,
+      weather: s.weather,
+      demand: s.demand,
+      power: s.cache.power,
+      network: s.cache.network,
+      loadKw: s.cache.loadKw,
+      outputMW: s.cache.outputMW,
     };
   }
 

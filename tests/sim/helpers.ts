@@ -19,3 +19,29 @@ export function testSim(cash = 1_000_000): Simulation {
 
 export const at = (sim: Simulation, x: number, y: number): number =>
   tileIndex(sim.state.world, x, y);
+
+/**
+ * A small powered neighbourhood on the left bank: an avenue along y = 20
+ * (x 5..40), zoning on y 21..26 (x 5..30) of the given kind, and a gas plant at
+ * (5, 30) with a substation right next to it at (8, 30), so the zone is covered.
+ */
+export function poweredTown(
+  sim: Simulation,
+  zone: 'residential' | 'commercial' | 'office' | 'industrial' = 'residential',
+  density: 'low' | 'medium' | 'high' = 'low',
+): void {
+  const ok = (r: { ok: boolean; reason?: string }) => {
+    if (!r.ok) throw new Error(r.reason);
+  };
+  ok(
+    sim.dispatch({
+      type: 'buildRoad',
+      roadClass: 'avenue',
+      from: { x: 5, y: 20 },
+      to: { x: 40, y: 20 },
+    }),
+  );
+  ok(sim.dispatch({ type: 'zone', zone, density, from: { x: 5, y: 21 }, to: { x: 30, y: 26 } }));
+  ok(sim.dispatch({ type: 'placeFacility', facility: 'gasPlant', at: { x: 5, y: 30 } }));
+  ok(sim.dispatch({ type: 'placeFacility', facility: 'substation', at: { x: 8, y: 30 } }));
+}

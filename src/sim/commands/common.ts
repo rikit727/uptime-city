@@ -1,3 +1,5 @@
+import { buildingTiles } from '../buildings';
+import { BUILDINGS, buildingDef } from '../data';
 import type { SimState } from '../state';
 import type { TileCoord } from '../types';
 import { inBounds, tileIndex } from '../world';
@@ -18,7 +20,26 @@ export function isValidCoord(c: unknown): c is TileCoord {
 }
 
 export function rejected(reason: string, blocked: number[] = []): CommandPlan {
-  return { ok: false, reason, cost: 0, affected: [], blocked, layers: [] };
+  return {
+    ok: false,
+    reason,
+    cost: 0,
+    affected: [],
+    blocked,
+    layers: [],
+    demolish: [],
+    removed: [],
+  };
+}
+
+/** Footprint tiles of the given buildings. */
+export function tilesOfBuildings(state: SimState, ids: readonly number[]): number[] {
+  const out: number[] = [];
+  for (const id of ids) {
+    const b = state.cache.byId.get(id);
+    if (b) out.push(...buildingTiles(state, b));
+  }
+  return out;
 }
 
 /** Finish a plan: fail if nothing changes or the player cannot afford it. */
@@ -29,9 +50,20 @@ export function finalisePlan(
   cost: number,
   layers: Layer[],
   nothingReason: string,
+  demolish: number[] = [],
 ): CommandPlan {
-  if (affected.length === 0) {
-    return { ok: false, reason: nothingReason, cost: 0, affected, blocked, layers: [] };
+  const removed = tilesOfBuildings(state, demolish);
+  if (affected.length === 0 && demolish.length === 0) {
+    return {
+      ok: false,
+      reason: nothingReason,
+      cost: 0,
+      affected,
+      blocked,
+      layers: [],
+      demolish,
+      removed,
+    };
   }
   if (cost > state.cash) {
     return {
@@ -41,7 +73,38 @@ export function finalisePlan(
       affected,
       blocked,
       layers,
+      demolish,
+      removed,
     };
   }
-  return { ok: true, cost, affected, blocked, layers };
+  return { ok: true, cost, affected, blocked, layers, demolish, removed };
 }
+
+/** Grown-building ids on these tiles, and whether any tile holds a facility. */
+export function buildingsUnder(
+  state: SimState,
+  tiles: readonly number[],
+): { grown: number[]; facilityTiles: Set<number> } {
+  const grown = new Set<number>();
+  const facilityTiles = new Set<number>();
+  for (const t of tiles) {
+    const id = state.cache.buildingAt[t] ?? 0;
+    if (id === 0) continue;
+    const b = state.cache.byId.get(id)!;
+    if (buildingDef(b.code)?.role === 'facility') facilityTiles.add(t);
+    else grown.add(id);
+  }
+  return { grown: [...grown].sort((a, b) => a - b), facilityTiles };
+}
+
+/** Demolition cost for buildings: per footprint tile. */
+export const demolishCost = (state: SimState, ids: readonly number[]): number =>
+  tilesOfBuildings(state, ids).length * BUILDINGS.demolishCostPerTile;
+
+/** Turn a plan into a refusal while keeping its tiles for the preview. */
+export const refuse = (plan: CommandPlan, reason: string): CommandPlan => ({
+  ...plan,
+  ok: false,
+  reason,
+  layers: [],
+});

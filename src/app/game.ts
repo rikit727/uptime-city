@@ -5,7 +5,7 @@
  */
 import { GAME_NAME } from '../config';
 import { GAME, Simulation } from '../sim';
-import type { DensityId } from '../sim';
+import type { DensityId, SimEvent, WeatherEventId } from '../sim';
 import { GameRenderer } from '../render/renderer';
 import { downloadSave, pickSaveFileText } from '../platform/fileTransfer';
 import { createSaveFile, parseSaveFile, simulationFromSave } from '../platform/saveFormat';
@@ -23,6 +23,12 @@ import { ToolController } from './toolController';
 
 /** Sim time budget per frame, in milliseconds (see BUILD_PROMPT performance rules). */
 const SIM_BUDGET_MS = 4;
+
+const WEATHER_ADVICE: Record<WeatherEventId, string> = {
+  heatwave: 'Expect high demand for cooling and water.',
+  coldSnap: 'Expect high heating demand.',
+  storm: 'Wind turbines shut down in very strong wind.',
+};
 
 export class Game {
   private sim: Simulation;
@@ -64,7 +70,7 @@ export class Game {
       this.stepSim(dt);
       this.cameraInput.update(dt);
       const snap = this.sim.snapshot();
-      this.renderer.render(snap);
+      this.renderer.render(snap, dt);
       this.hud.update(snap, this.scheduler.speedIndex);
       requestAnimationFrame(frame);
     };
@@ -80,8 +86,31 @@ export class Game {
       ran++;
     }
     if (ran < due) this.scheduler.refund(due - ran);
-    for (const ev of this.sim.drainEvents()) {
-      if (ev.type === 'dayStarted' && this.settings.autosave) void this.autosave();
+    for (const ev of this.sim.drainEvents()) this.onSimEvent(ev);
+  }
+
+  private onSimEvent(ev: SimEvent): void {
+    switch (ev.type) {
+      case 'dayStarted':
+        if (this.settings.autosave) void this.autosave();
+        break;
+      case 'weatherEventStarted':
+        this.toast(`${ev.name} for the next ${ev.days} days. ${WEATHER_ADVICE[ev.event]}`, 'warn');
+        break;
+      case 'weatherEventEnded':
+        this.toast(`The ${ev.name.toLowerCase()} is over.`);
+        break;
+      case 'powerShortfall':
+        this.toast(
+          `Power shortfall: rolling outages, ${ev.shedMW.toFixed(1)} MW short. Add generation, substations or stronger lines.`,
+          'error',
+        );
+        break;
+      case 'powerRestored':
+        this.toast('Power supply restored across the city.', 'good');
+        break;
+      default:
+        break;
     }
   }
 

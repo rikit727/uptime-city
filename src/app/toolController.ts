@@ -2,6 +2,7 @@
  * Turns pointer input on the map into tool previews and sim commands.
  * The current tool and density live here; the HUD only displays them.
  */
+import { facilityDef } from '../sim';
 import type { Command, DensityId, Simulation } from '../sim';
 import type { GameRenderer } from '../render/renderer';
 import type { Hud } from '../ui/hud';
@@ -15,6 +16,8 @@ export class ToolController {
   private dragStart: number | null = null;
   private dragEnd: number | null = null;
   private pointerId: number | null = null;
+  /** Facility tool: the tile under the pointer, for the placement preview. */
+  private hover: number | null = null;
 
   constructor(
     private readonly getSim: () => Simulation,
@@ -27,12 +30,19 @@ export class ToolController {
     c.addEventListener('pointermove', (e) => this.onMove(e));
     c.addEventListener('pointerup', (e) => this.onUp(e));
     c.addEventListener('pointercancel', () => this.cancel());
-    c.addEventListener('pointerleave', () => this.renderer.setCursor(null));
+    c.addEventListener('pointerleave', () => {
+      this.renderer.setCursor(null);
+      if (this.tool.kind === 'facility' && this.dragStart === null) {
+        this.hover = null;
+        this.renderer.setPreview(null);
+      }
+    });
   }
 
   selectTool(tool: ToolId): void {
     this.cancel();
     this.tool = tool;
+    this.hover = null;
     this.hud.setActiveTool(tool, this.density);
     if (tool.kind !== 'inspect') this.hud.inspector.show(null);
     this.hud.setStatus(hintFor(tool));
@@ -90,6 +100,14 @@ export class ToolController {
       return;
     }
     this.camera.moveDrag(e); // tracks pointer for edge scroll
+    if (this.tool.kind === 'facility') {
+      if (tile !== null && tile !== this.hover) {
+        this.hover = tile;
+        if (this.dragStart !== null) this.dragEnd = tile;
+        this.refreshPreview();
+      }
+      return;
+    }
     if (this.dragStart === null || tile === null || tile === this.dragEnd) return;
     this.dragEnd = tile;
     this.refreshPreview();
@@ -112,11 +130,20 @@ export class ToolController {
     if (!cmd) return;
     const result = this.getSim().dispatch(cmd);
     if (!result.ok) this.hud.toasts.show(result.reason ?? 'That is not possible here.', 'warn');
+    if (this.tool.kind === 'facility') this.refreshPreview();
   }
 
   private currentCommand(): Command | null {
-    if (this.dragStart === null || this.dragEnd === null) return null;
     const w = this.getSim().state.world.width;
+    if (this.tool.kind === 'facility') {
+      const tile = this.dragEnd ?? this.hover;
+      if (tile === null) return null;
+      // The pointer marks the footprint's centre.
+      const [fw, fd] = facilityDef(this.tool.facility).footprint;
+      const at = { x: (tile % w) - ((fw - 1) >> 1), y: Math.floor(tile / w) - ((fd - 1) >> 1) };
+      return { type: 'placeFacility', facility: this.tool.facility, at };
+    }
+    if (this.dragStart === null || this.dragEnd === null) return null;
     const from = { x: this.dragStart % w, y: Math.floor(this.dragStart / w) };
     const to = { x: this.dragEnd % w, y: Math.floor(this.dragEnd / w) };
     switch (this.tool.kind) {
@@ -124,6 +151,8 @@ export class ToolController {
         return { type: 'buildRoad', roadClass: this.tool.roadClass, from, to };
       case 'zone':
         return { type: 'zone', zone: this.tool.zone, density: this.density, from, to };
+      case 'line':
+        return { type: 'buildLine', line: this.tool.line, from, to };
       case 'bulldoze':
         return { type: 'bulldoze', from, to };
       default:
@@ -138,12 +167,19 @@ export class ToolController {
     this.renderer.setPreview({
       affected: plan.affected,
       blocked: plan.blocked,
+      removed: plan.removed,
       removing: cmd.type === 'bulldoze',
       invalid: !plan.ok && plan.affected.length > 0,
     });
     if (plan.ok) {
       const n = plan.affected.length;
-      this.hud.setStatus(`${n} tile${n === 1 ? '' : 's'} · ${formatMoney(plan.cost)}`);
+      const d = plan.demolish.length;
+      const parts =
+        cmd.type === 'placeFacility'
+          ? [facilityDef(cmd.facility).name, formatMoney(plan.cost)]
+          : [`${n} tile${n === 1 ? '' : 's'}`, formatMoney(plan.cost)];
+      if (d > 0) parts.push(`demolishes ${d} building${d === 1 ? '' : 's'}`);
+      this.hud.setStatus(parts.join(' · '));
     } else {
       this.hud.setStatus(plan.reason ?? 'Not possible here.', 'error');
     }
@@ -158,7 +194,11 @@ function hintFor(tool: ToolId): string {
       return 'Drag to lay a road. Release to build; Esc cancels.';
     case 'zone':
       return 'Drag a rectangle to zone land. Roads and water are skipped.';
+    case 'line':
+      return 'Drag to run a power line from a power station or another line to a substation.';
+    case 'facility':
+      return `Click to place a ${facilityDef(tool.facility).name.toLowerCase()}. Connect it with power lines.`;
     case 'bulldoze':
-      return 'Drag a rectangle to clear roads and zoning.';
+      return 'Drag a rectangle to clear roads, lines, buildings and zoning.';
   }
 }

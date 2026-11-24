@@ -10,7 +10,7 @@ import { Simulation, dayOf, deserializeState, serializeState } from '../sim';
 import type { SerializedState } from '../sim';
 
 export const SAVE_FORMAT = 'uptime-city-save';
-export const CURRENT_SAVE_VERSION = 1;
+export const CURRENT_SAVE_VERSION = 2;
 
 export interface SaveMeta {
   gameName: string;
@@ -36,8 +36,43 @@ export interface SaveFile {
  */
 type RawSave = Record<string, unknown> & { version: number };
 export const MIGRATIONS: Record<number, (save: RawSave) => RawSave> = {
-  // Example for the future:
-  // 1: (save) => ({ ...save, version: 2, state: { ...(save.state as object), newField: 0 } }),
+  // v1 -> v2 (milestone 2): power layer, buildings, estates, weather, demand, rules.
+  1: (save) => {
+    const state = save.state as Record<string, unknown>;
+    const world = state.world as Record<string, unknown>;
+    const tiles = Number(world.width) * Number(world.height);
+    return {
+      ...save,
+      version: 2,
+      state: {
+        ...state,
+        rules: { weatherEvents: true },
+        world: { ...world, power: [0, tiles] },
+        buildings: [],
+        nextBuildingId: 1,
+        estates: [],
+        nextEstateId: 1,
+        weather: {
+          temperatureC: 10,
+          rainMmPerHour: 0,
+          windMs: 5,
+          cloud: 0.5,
+          sunshine: 0,
+          anomalyC: 0,
+          wetDay: false,
+          dayCloud: 0.5,
+          dayWindMs: 5,
+          windFrom: 5,
+          windTo: 5,
+          cloudFrom: 0.5,
+          cloudTo: 0.5,
+          event: null,
+        },
+        demand: { residential: 0, commercial: 0, office: 0, industrial: 0, agricultural: 0 },
+        growthCursor: 0,
+      },
+    };
+  },
 };
 
 export function createSaveFile(sim: Simulation, label: string, now = new Date()): SaveFile {

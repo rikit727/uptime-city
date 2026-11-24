@@ -1,0 +1,47 @@
+{
+  "//": "Zone demand and building growth tunables. Demand per zone is -1..1; growth needs a road beside the plot and power coverage.",
+  "scanTilesPerTick": 280,
+  "spawnChance": 0.12,
+  "initialOccupancy": 0.25,
+  "occupancyGrowthPerHour": 0.03,
+  "occupancyDeclinePerHour": 0.02,
+  "outageGraceMinutes": 240,
+  "demand": {
+    "workforcePerResident": 0.5,
+    "bootstrapJobs": 150,
+    "commercialJobsPerResident": 0.14,
+    "officeJobsPerResident": 0.2,
+    "industrialJobsPerResident": 0.16,
+    "agriculturalJobsPerResident": 0.02,
+    "baseCommercialJobs": 20,
+    "baseOfficeJobs": 20,
+    "baseIndustrialJobs": 80,
+    "baseAgriculturalJobs": 40,
+    "minScale": 50
+  },
+  "estates": {
+    "names": [
+      "Riverside",
+      "Northgate",
+      "Millbrook",
+      "Kingsmead",
+      "Ashfield",
+      "Brookside",
+      "Westfield",
+      "Eastway",
+      "Hollins",
+      "Oakwood",
+      "Fernhill",
+      "Station Road",
+      "Canal Side",
+      "Larkspur",
+      "Moorfield",
+      "Southmere",
+      "Thornbury",
+      "Harbour Lane",
+      "Greenacre",
+      "Elmstead"
+    ],
+    "suffixes": ["Industrial Estate", "Trading Estate", "Enterprise Park", "Industrial Park"]
+  }
+}

@@ -6,6 +6,7 @@
 import type { SimState } from '../state';
 import { applyBulldoze, planBulldoze } from './bulldoze';
 import { rejected } from './common';
+import { applyBuildLine, applyPlaceFacility, planBuildLine, planPlaceFacility } from './power';
 import { applyBuildRoad, planBuildRoad } from './roads';
 import type { Command, CommandPlan } from './types';
 import { applyZone, planZone } from './zoning';
@@ -23,6 +24,8 @@ const handlers: HandlerMap = {
   buildRoad: { plan: planBuildRoad, apply: applyBuildRoad },
   zone: { plan: planZone, apply: applyZone },
   bulldoze: { plan: planBulldoze, apply: applyBulldoze },
+  placeFacility: { plan: planPlaceFacility, apply: applyPlaceFacility },
+  buildLine: { plan: planBuildLine, apply: applyBuildLine },
 };
 
 function handlerFor(cmd: Command): Handler<Command> | undefined {

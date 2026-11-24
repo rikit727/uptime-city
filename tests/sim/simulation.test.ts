@@ -24,6 +24,13 @@ const script: { atTick: number; cmd: Command }[] = [
     cmd: { type: 'buildRoad', roadClass: 'local', from: { x: 10, y: 21 }, to: { x: 10, y: 30 } },
   },
   { atTick: 900, cmd: { type: 'bulldoze', from: { x: 6, y: 22 }, to: { x: 8, y: 24 } } },
+  { atTick: 20, cmd: { type: 'placeFacility', facility: 'gasPlant', at: { x: 5, y: 30 } } },
+  { atTick: 20, cmd: { type: 'placeFacility', facility: 'substation', at: { x: 30, y: 30 } } },
+  {
+    atTick: 21,
+    cmd: { type: 'buildLine', line: 'distribution', from: { x: 8, y: 31 }, to: { x: 29, y: 31 } },
+  },
+  { atTick: 25, cmd: { type: 'placeFacility', facility: 'windTurbine', at: { x: 5, y: 34 } } },
 ];
 
 function runScripted(seed: number, ticks: number): Simulation {
@@ -59,6 +66,13 @@ describe('determinism', () => {
     const a = runScripted(2024, 1500);
     const b = runScripted(2024, 1500);
     expect(a.hash()).toBe(b.hash());
+  });
+
+  it('the scripted city grows and draws power, deterministically', () => {
+    const a = runScripted(99, 3000);
+    expect(a.state.buildings.length).toBeGreaterThan(6);
+    expect(a.state.cache.power.servedMW).toBeGreaterThan(0);
+    expect(runScripted(99, 3000).hash()).toBe(a.hash());
   });
 
   it('a different seed gives a different hash', () => {

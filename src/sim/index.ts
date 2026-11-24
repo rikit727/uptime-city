@@ -3,11 +3,27 @@ export { Simulation, replay } from './simulation';
 export type { LoggedCommand, Revisions, SimSnapshot } from './simulation';
 export type { Command, CommandPlan, CommandResult, CommandType, Layer } from './commands';
 export type { SimEvent } from './events';
-export type { SimState, NewGameOptions } from './state';
+export type {
+  Building,
+  Estate,
+  GameRules,
+  NewGameOptions,
+  PowerNetwork,
+  PowerStats,
+  SimState,
+  WeatherState,
+} from './state';
 export { serializeState, deserializeState } from './serialize';
 export type { SerializedState } from './serialize';
 export { hashState } from './hash';
 export { roadPath, rectTiles } from './geometry';
+export { defOf, grownDefOf, residentsOf, jobsOf } from './buildings';
+export { estateStats } from './estates';
+export type { EstateStats } from './estates';
+export { cityTotals } from './growth';
+export type { CityTotals } from './growth';
+export { availableMW, temperatureFactor } from './power';
+export { daylight, solarElevation } from './weather';
 export * from './data';
 export * from './time';
 export * from './types';

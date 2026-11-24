@@ -1,0 +1,923 @@
+{
+  "//": "Buildings that grow on zoned land. Footprints are in tiles (w along x, d along y). Model parts are in tile units relative to the footprint's top-left corner; x/z are part centres, y is the base height. Colours may be lists: the renderer picks one per building. Codes are saved in save files: never renumber or reuse them.",
+  "demolishCostPerTile": 15,
+  "fieldColours": {
+    "arable": {
+      "spring": "#8fbf5a",
+      "summer": "#d9b84a",
+      "autumn": "#8a6a45",
+      "winter": "#9a8f78"
+    },
+    "pasture": {
+      "spring": "#7fbf5f",
+      "summer": "#9cbf5a",
+      "autumn": "#8aa556",
+      "winter": "#8f9a72"
+    },
+    "glasshouse": {
+      "spring": "#a5a58a",
+      "summer": "#a8a585",
+      "autumn": "#9e9a80",
+      "winter": "#98957f"
+    }
+  },
+  "types": [
+    {
+      "id": "house",
+      "code": 1,
+      "name": "Detached house",
+      "category": "Housing",
+      "zone": "residential",
+      "densities": ["low"],
+      "footprint": [1, 1],
+      "weight": 3,
+      "residents": 4,
+      "jobs": 0,
+      "powerKw": 2.5,
+      "priority": 2,
+      "heightJitter": 0.15,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.55,
+          "d": 0.5,
+          "h": 0.28,
+          "colour": ["#e8dcc8", "#d9c3a5", "#c9d4dc", "#e6d0c0"],
+          "windows": true
+        },
+        {
+          "shape": "gable",
+          "x": 0.5,
+          "z": 0.5,
+          "y": 0.28,
+          "w": 0.6,
+          "d": 0.55,
+          "h": 0.18,
+          "colour": ["#8a4b3c", "#5d5f66", "#6e4a3a"]
+        }
+      ]
+    },
+    {
+      "id": "semi",
+      "code": 2,
+      "name": "Semi-detached houses",
+      "category": "Housing",
+      "zone": "residential",
+      "densities": ["low"],
+      "footprint": [1, 1],
+      "weight": 2,
+      "residents": 7,
+      "jobs": 0,
+      "powerKw": 4.5,
+      "priority": 2,
+      "heightJitter": 0.1,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.75,
+          "d": 0.45,
+          "h": 0.3,
+          "colour": ["#d8c4a8", "#c7b299", "#e0d6c6"],
+          "windows": true
+        },
+        {
+          "shape": "gable",
+          "x": 0.5,
+          "z": 0.5,
+          "y": 0.3,
+          "w": 0.8,
+          "d": 0.5,
+          "h": 0.18,
+          "colour": ["#7a4535", "#55585e"]
+        }
+      ]
+    },
+    {
+      "id": "terrace",
+      "code": 3,
+      "name": "Terraced houses",
+      "category": "Housing",
+      "zone": "residential",
+      "densities": ["medium"],
+      "footprint": [1, 1],
+      "weight": 2,
+      "residents": 14,
+      "jobs": 0,
+      "powerKw": 9,
+      "priority": 2,
+      "heightJitter": 0.1,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.92,
+          "d": 0.5,
+          "h": 0.36,
+          "colour": ["#b5694d", "#a35d45", "#c27a5c", "#d6c7ad"],
+          "windows": true
+        },
+        {
+          "shape": "gable",
+          "x": 0.5,
+          "z": 0.5,
+          "y": 0.36,
+          "w": 0.94,
+          "d": 0.55,
+          "h": 0.16,
+          "colour": ["#4f5258", "#5f4038"]
+        }
+      ]
+    },
+    {
+      "id": "flats",
+      "code": 4,
+      "name": "Low-rise flats",
+      "category": "Housing",
+      "zone": "residential",
+      "densities": ["medium"],
+      "footprint": [1, 1],
+      "weight": 2,
+      "residents": 30,
+      "jobs": 0,
+      "powerKw": 18,
+      "priority": 2,
+      "heightJitter": 0.2,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.75,
+          "d": 0.7,
+          "h": 0.6,
+          "colour": ["#c9b8a0", "#b9a68d", "#d5d0c4", "#9e8a76"],
+          "windows": true
+        }
+      ]
+    },
+    {
+      "id": "apartmentBlock",
+      "code": 5,
+      "name": "Apartment block",
+      "category": "Housing",
+      "zone": "residential",
+      "densities": ["high"],
+      "footprint": [2, 2],
+      "weight": 2,
+      "residents": 260,
+      "jobs": 0,
+      "powerKw": 150,
+      "priority": 2,
+      "heightJitter": 0.3,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 1,
+          "w": 1.6,
+          "d": 1.3,
+          "h": 1.6,
+          "colour": ["#d2cbc0", "#b8b0a4", "#c5c9cc", "#a9a39a"],
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 1,
+          "y": 1.6,
+          "w": 0.5,
+          "d": 0.4,
+          "h": 0.15,
+          "colour": "#8a8f94"
+        }
+      ]
+    },
+    {
+      "id": "residentialTower",
+      "code": 6,
+      "name": "Residential tower",
+      "category": "Housing",
+      "zone": "residential",
+      "densities": ["high"],
+      "footprint": [1, 1],
+      "weight": 2,
+      "residents": 140,
+      "jobs": 0,
+      "powerKw": 85,
+      "priority": 2,
+      "heightJitter": 0.35,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.7,
+          "d": 0.7,
+          "h": 2.4,
+          "colour": ["#cfc8bc", "#b3b9be", "#c2b5a3"],
+          "windows": true
+        }
+      ]
+    },
+    {
+      "id": "cornerShop",
+      "code": 20,
+      "name": "Corner shop",
+      "category": "High-street shops",
+      "zone": "commercial",
+      "densities": ["low"],
+      "footprint": [1, 1],
+      "weight": 3,
+      "residents": 0,
+      "jobs": 4,
+      "powerKw": 12,
+      "priority": 3,
+      "heightJitter": 0.1,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.7,
+          "d": 0.6,
+          "h": 0.3,
+          "colour": ["#e9e3d3", "#d4dde6"],
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.18,
+          "y": 0.18,
+          "w": 0.72,
+          "d": 0.08,
+          "h": 0.06,
+          "colour": ["#2a6cbf", "#c0392b", "#2e8c83"]
+        }
+      ]
+    },
+    {
+      "id": "retailPark",
+      "code": 21,
+      "name": "Retail park",
+      "category": "Retail park",
+      "zone": "commercial",
+      "densities": ["low", "medium"],
+      "footprint": [2, 2],
+      "weight": 1,
+      "residents": 0,
+      "jobs": 70,
+      "powerKw": 220,
+      "priority": 3,
+      "heightJitter": 0.05,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 0.65,
+          "w": 1.8,
+          "d": 1,
+          "h": 0.4,
+          "colour": ["#d8dde2", "#c9ced4"],
+          "windows": true
+        },
+        { "shape": "box", "x": 1, "z": 1.6, "w": 1.8, "d": 0.6, "h": 0.02, "colour": "#6b7178" }
+      ]
+    },
+    {
+      "id": "highStreetShops",
+      "code": 22,
+      "name": "High-street shops",
+      "category": "High-street shops",
+      "zone": "commercial",
+      "densities": ["medium"],
+      "footprint": [1, 1],
+      "weight": 3,
+      "residents": 0,
+      "jobs": 14,
+      "powerKw": 40,
+      "priority": 3,
+      "heightJitter": 0.15,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.92,
+          "d": 0.7,
+          "h": 0.5,
+          "colour": ["#d9cfc0", "#c7b8a6", "#e1dbd0", "#b9a58e"],
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.13,
+          "y": 0.18,
+          "w": 0.94,
+          "d": 0.08,
+          "h": 0.06,
+          "colour": ["#2a6cbf", "#c0392b", "#2e8c83", "#8e44ad"]
+        }
+      ]
+    },
+    {
+      "id": "shoppingArcade",
+      "code": 23,
+      "name": "Shopping arcade",
+      "category": "High-street shops",
+      "zone": "commercial",
+      "densities": ["high"],
+      "footprint": [1, 1],
+      "weight": 2,
+      "residents": 0,
+      "jobs": 30,
+      "powerKw": 90,
+      "priority": 3,
+      "heightJitter": 0.25,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.9,
+          "d": 0.85,
+          "h": 0.9,
+          "colour": ["#cfd6dc", "#b8c4cf", "#d8d0c2"],
+          "windows": true
+        }
+      ]
+    },
+    {
+      "id": "departmentStore",
+      "code": 24,
+      "name": "Department store",
+      "category": "High-street shops",
+      "zone": "commercial",
+      "densities": ["high"],
+      "footprint": [2, 2],
+      "weight": 1,
+      "residents": 0,
+      "jobs": 180,
+      "powerKw": 450,
+      "priority": 3,
+      "heightJitter": 0.15,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 1,
+          "w": 1.8,
+          "d": 1.7,
+          "h": 1.1,
+          "colour": ["#e0d8c8", "#c9d3dc"],
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 1,
+          "y": 1.1,
+          "w": 1.2,
+          "d": 1,
+          "h": 0.12,
+          "colour": "#7d8790"
+        }
+      ]
+    },
+    {
+      "id": "smallOffices",
+      "code": 40,
+      "name": "Small offices",
+      "category": "Office block",
+      "zone": "office",
+      "densities": ["low"],
+      "footprint": [1, 1],
+      "weight": 2,
+      "residents": 0,
+      "jobs": 18,
+      "powerKw": 35,
+      "priority": 3,
+      "heightJitter": 0.1,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.75,
+          "d": 0.65,
+          "h": 0.4,
+          "colour": ["#d9dde6", "#c6cbd6", "#e3e0ea"],
+          "windows": true
+        }
+      ]
+    },
+    {
+      "id": "businessPark",
+      "code": 41,
+      "name": "Business park",
+      "category": "Business park",
+      "zone": "office",
+      "densities": ["low", "medium"],
+      "footprint": [2, 2],
+      "weight": 1,
+      "residents": 0,
+      "jobs": 140,
+      "powerKw": 260,
+      "priority": 3,
+      "heightJitter": 0.1,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.55,
+          "z": 0.6,
+          "w": 0.8,
+          "d": 0.8,
+          "h": 0.5,
+          "colour": ["#cdd5e2", "#bfc6d6"],
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.35,
+          "w": 0.75,
+          "d": 0.9,
+          "h": 0.6,
+          "colour": ["#d7dae3", "#b5bfd0"],
+          "windows": true
+        },
+        { "shape": "box", "x": 1.5, "z": 0.45, "w": 0.8, "d": 0.6, "h": 0.02, "colour": "#6b7178" }
+      ]
+    },
+    {
+      "id": "officeBlock",
+      "code": 42,
+      "name": "Office block",
+      "category": "Office block",
+      "zone": "office",
+      "densities": ["medium"],
+      "footprint": [1, 1],
+      "weight": 3,
+      "residents": 0,
+      "jobs": 70,
+      "powerKw": 120,
+      "priority": 3,
+      "heightJitter": 0.25,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.8,
+          "d": 0.8,
+          "h": 1.1,
+          "colour": ["#a9b8cc", "#c3cbd8", "#8fa3bd"],
+          "windows": true
+        }
+      ]
+    },
+    {
+      "id": "officeTower",
+      "code": 43,
+      "name": "Office tower",
+      "category": "Office block",
+      "zone": "office",
+      "densities": ["high"],
+      "footprint": [1, 1],
+      "weight": 3,
+      "residents": 0,
+      "jobs": 260,
+      "powerKw": 420,
+      "priority": 3,
+      "heightJitter": 0.4,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.78,
+          "d": 0.78,
+          "h": 3.2,
+          "colour": ["#7f97b5", "#9fb3c8", "#6f86a3", "#b4c2d1"],
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "y": 3.2,
+          "w": 0.4,
+          "d": 0.4,
+          "h": 0.2,
+          "colour": "#59626c"
+        }
+      ]
+    },
+    {
+      "id": "headquarters",
+      "code": 44,
+      "name": "Corporate headquarters",
+      "category": "Office block",
+      "zone": "office",
+      "densities": ["high"],
+      "footprint": [2, 2],
+      "weight": 1,
+      "residents": 0,
+      "jobs": 900,
+      "powerKw": 1300,
+      "priority": 3,
+      "heightJitter": 0.3,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 1,
+          "w": 1.7,
+          "d": 1.7,
+          "h": 0.5,
+          "colour": ["#b7c2cf"],
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 1,
+          "y": 0.5,
+          "w": 1.2,
+          "d": 1.2,
+          "h": 3.6,
+          "colour": ["#6d87a6", "#8ea4bd", "#5c7491"],
+          "windows": true
+        }
+      ]
+    },
+    {
+      "id": "workshops",
+      "code": 60,
+      "name": "Workshops",
+      "category": "Light industry",
+      "zone": "industrial",
+      "densities": ["low", "medium"],
+      "footprint": [1, 1],
+      "weight": 3,
+      "residents": 0,
+      "jobs": 16,
+      "powerKw": 60,
+      "priority": 4,
+      "heightJitter": 0.1,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.45,
+          "w": 0.85,
+          "d": 0.65,
+          "h": 0.32,
+          "colour": ["#c8c2b4", "#b4b9bf", "#a7a08e"]
+        },
+        {
+          "shape": "gable",
+          "x": 0.5,
+          "z": 0.45,
+          "y": 0.32,
+          "w": 0.86,
+          "d": 0.66,
+          "h": 0.08,
+          "colour": ["#7e868e", "#6a7a8a"]
+        }
+      ]
+    },
+    {
+      "id": "warehouse",
+      "code": 61,
+      "name": "Warehouse and logistics",
+      "category": "Warehousing and logistics",
+      "zone": "industrial",
+      "densities": ["low", "medium"],
+      "footprint": [2, 2],
+      "weight": 2,
+      "residents": 0,
+      "jobs": 45,
+      "powerKw": 180,
+      "priority": 4,
+      "heightJitter": 0.08,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 0.75,
+          "w": 1.85,
+          "d": 1.3,
+          "h": 0.5,
+          "colour": ["#d2d6d9", "#bfc5c9", "#c9c1ae"]
+        },
+        { "shape": "box", "x": 1, "z": 1.7, "w": 1.85, "d": 0.5, "h": 0.02, "colour": "#62686e" }
+      ]
+    },
+    {
+      "id": "lightFactory",
+      "code": 62,
+      "name": "Light factory",
+      "category": "Light industry",
+      "zone": "industrial",
+      "densities": ["medium"],
+      "footprint": [2, 2],
+      "weight": 2,
+      "residents": 0,
+      "jobs": 90,
+      "powerKw": 400,
+      "priority": 4,
+      "heightJitter": 0.1,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 1,
+          "w": 1.8,
+          "d": 1.6,
+          "h": 0.55,
+          "colour": ["#bdb7a8", "#aeb4ba"]
+        },
+        {
+          "shape": "gable",
+          "x": 0.55,
+          "z": 1,
+          "y": 0.55,
+          "w": 0.9,
+          "d": 1.6,
+          "h": 0.15,
+          "colour": "#7a828a"
+        },
+        {
+          "shape": "gable",
+          "x": 1.45,
+          "z": 1,
+          "y": 0.55,
+          "w": 0.9,
+          "d": 1.6,
+          "h": 0.15,
+          "colour": "#7a828a"
+        }
+      ]
+    },
+    {
+      "id": "heavyIndustry",
+      "code": 63,
+      "name": "Heavy industrial plant",
+      "category": "Heavy industry",
+      "zone": "industrial",
+      "densities": ["high"],
+      "footprint": [2, 2],
+      "weight": 2,
+      "residents": 0,
+      "jobs": 160,
+      "powerKw": 1500,
+      "priority": 4,
+      "heightJitter": 0.15,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.8,
+          "z": 1,
+          "w": 1.4,
+          "d": 1.7,
+          "h": 0.8,
+          "colour": ["#8d8576", "#7c7f82", "#96866e"]
+        },
+        {
+          "shape": "cylinder",
+          "x": 1.7,
+          "z": 0.5,
+          "w": 0.35,
+          "d": 0.35,
+          "h": 1.2,
+          "colour": "#a39c90"
+        },
+        {
+          "shape": "cylinder",
+          "x": 1.7,
+          "z": 1.4,
+          "w": 0.5,
+          "d": 0.5,
+          "h": 0.6,
+          "colour": "#b5aea2"
+        },
+        {
+          "shape": "cylinder",
+          "x": 0.4,
+          "z": 0.4,
+          "y": 0.8,
+          "w": 0.12,
+          "d": 0.12,
+          "h": 1.1,
+          "colour": "#6b5e52"
+        }
+      ]
+    },
+    {
+      "id": "distributionCentre",
+      "code": 64,
+      "name": "Distribution centre",
+      "category": "Warehousing and logistics",
+      "zone": "industrial",
+      "densities": ["high"],
+      "footprint": [3, 3],
+      "weight": 1,
+      "residents": 0,
+      "jobs": 220,
+      "powerKw": 700,
+      "priority": 4,
+      "heightJitter": 0.05,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.1,
+          "w": 2.8,
+          "d": 2,
+          "h": 0.65,
+          "colour": ["#dfe2e4", "#c8ced2"]
+        },
+        { "shape": "box", "x": 1.5, "z": 2.6, "w": 2.8, "d": 0.7, "h": 0.02, "colour": "#5e646a" }
+      ]
+    },
+    {
+      "id": "arableFarm",
+      "code": 80,
+      "name": "Arable farm",
+      "category": "Arable",
+      "zone": "agricultural",
+      "densities": [],
+      "footprint": [4, 4],
+      "weight": 3,
+      "residents": 3,
+      "jobs": 4,
+      "powerKw": 15,
+      "priority": 4,
+      "exportPerDay": 600,
+      "fields": "arable",
+      "heightJitter": 0.1,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.45,
+          "z": 0.45,
+          "w": 0.45,
+          "d": 0.4,
+          "h": 0.25,
+          "colour": ["#e6dcc8", "#d6c6a8"],
+          "windows": true
+        },
+        {
+          "shape": "gable",
+          "x": 0.45,
+          "z": 0.45,
+          "y": 0.25,
+          "w": 0.5,
+          "d": 0.45,
+          "h": 0.16,
+          "colour": "#7a4535"
+        },
+        {
+          "shape": "box",
+          "x": 1.2,
+          "z": 0.4,
+          "w": 0.7,
+          "d": 0.45,
+          "h": 0.35,
+          "colour": ["#9b3b2f", "#6d6a5e"]
+        },
+        {
+          "shape": "gable",
+          "x": 1.2,
+          "z": 0.4,
+          "y": 0.35,
+          "w": 0.72,
+          "d": 0.47,
+          "h": 0.18,
+          "colour": "#5a5d62"
+        }
+      ]
+    },
+    {
+      "id": "livestockFarm",
+      "code": 81,
+      "name": "Livestock farm",
+      "category": "Livestock",
+      "zone": "agricultural",
+      "densities": [],
+      "footprint": [3, 3],
+      "weight": 2,
+      "residents": 3,
+      "jobs": 5,
+      "powerKw": 25,
+      "priority": 4,
+      "exportPerDay": 700,
+      "fields": "pasture",
+      "heightJitter": 0.1,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.45,
+          "z": 0.45,
+          "w": 0.45,
+          "d": 0.4,
+          "h": 0.25,
+          "colour": ["#e6dcc8", "#d9cdb5"],
+          "windows": true
+        },
+        {
+          "shape": "gable",
+          "x": 0.45,
+          "z": 0.45,
+          "y": 0.25,
+          "w": 0.5,
+          "d": 0.45,
+          "h": 0.16,
+          "colour": "#6e4a3a"
+        },
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 0.45,
+          "w": 1,
+          "d": 0.5,
+          "h": 0.3,
+          "colour": ["#a44236", "#7f7a6b"]
+        },
+        {
+          "shape": "gable",
+          "x": 1.5,
+          "z": 0.45,
+          "y": 0.3,
+          "w": 1.02,
+          "d": 0.52,
+          "h": 0.16,
+          "colour": "#55585e"
+        },
+        {
+          "shape": "cylinder",
+          "x": 2.4,
+          "z": 0.4,
+          "w": 0.25,
+          "d": 0.25,
+          "h": 0.6,
+          "colour": "#b8bcc0"
+        }
+      ]
+    },
+    {
+      "id": "glasshouses",
+      "code": 82,
+      "name": "Glasshouses and polytunnels",
+      "category": "Glasshouses",
+      "zone": "agricultural",
+      "densities": [],
+      "footprint": [3, 2],
+      "weight": 1,
+      "residents": 0,
+      "jobs": 12,
+      "powerKw": 120,
+      "priority": 4,
+      "exportPerDay": 900,
+      "fields": "glasshouse",
+      "heightJitter": 0,
+      "parts": [
+        { "shape": "box", "x": 0.4, "z": 0.4, "w": 0.5, "d": 0.45, "h": 0.25, "colour": "#d6d2c4" },
+        {
+          "shape": "tunnel",
+          "x": 1.5,
+          "z": 0.45,
+          "w": 1.6,
+          "d": 0.5,
+          "h": 0.25,
+          "colour": "#eef3f2"
+        },
+        {
+          "shape": "tunnel",
+          "x": 1.5,
+          "z": 1.05,
+          "w": 2.6,
+          "d": 0.5,
+          "h": 0.25,
+          "colour": "#eef3f2"
+        },
+        {
+          "shape": "tunnel",
+          "x": 1.5,
+          "z": 1.6,
+          "w": 2.6,
+          "d": 0.5,
+          "h": 0.25,
+          "colour": "#e4ecea"
+        }
+      ]
+    }
+  ]
+}

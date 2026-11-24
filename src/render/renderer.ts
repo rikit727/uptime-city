@@ -3,8 +3,11 @@
  * Each layer rebuilds itself when the matching revision counter changes.
  */
 import { PCFSoftShadowMap, Plane, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from 'three';
+import { daylight } from '../sim';
 import type { SimSnapshot } from '../sim';
 import { CameraRig } from './cameraRig';
+import { BuildingLayer } from './layers/buildings';
+import { PowerLayer } from './layers/power';
 import { PreviewLayer } from './layers/preview';
 import type { PreviewTiles } from './layers/preview';
 import { RoadLayer } from './layers/roads';
@@ -22,6 +25,8 @@ export class GameRenderer {
   private readonly terrain: TerrainLayer;
   private readonly roads: RoadLayer;
   private readonly zones: ZoneLayer;
+  private readonly buildings: BuildingLayer;
+  private readonly power: PowerLayer;
   private readonly preview: PreviewLayer;
   private readonly raycaster = new Raycaster();
   private readonly groundPlane = new Plane(new Vector3(0, 1, 0), 0);
@@ -45,8 +50,17 @@ export class GameRenderer {
     this.terrain = new TerrainLayer(mapWidth, mapHeight);
     this.roads = new RoadLayer(mapWidth, mapHeight);
     this.zones = new ZoneLayer(mapWidth, mapHeight);
+    this.buildings = new BuildingLayer(mapWidth, mapHeight);
+    this.power = new PowerLayer();
     this.preview = new PreviewLayer(mapWidth, mapHeight);
-    this.scene.add(this.terrain.group, this.zones.group, this.roads.group, this.preview.group);
+    this.scene.add(
+      this.terrain.group,
+      this.zones.group,
+      this.roads.group,
+      this.buildings.group,
+      this.power.group,
+      this.preview.group,
+    );
     this.resize();
   }
 
@@ -94,14 +108,20 @@ export class GameRenderer {
     this.terrain.invalidate();
     this.roads.invalidate();
     this.zones.invalidate();
+    this.buildings.invalidate();
+    this.power.invalidate();
     this.preview.show(null);
   }
 
-  render(snap: SimSnapshot): void {
+  /** Draw a frame. `dt` is real seconds since the last frame (for animation). */
+  render(snap: SimSnapshot, dt = 0): void {
+    const night = 1 - daylight(snap.minute);
     this.terrain.update(snap);
     this.roads.update(snap);
     this.zones.update(snap);
-    this.lighting.update(snap.minute);
+    this.buildings.update(snap, night, dt, performance.now());
+    this.power.update(snap, night);
+    this.lighting.update(snap.minute, snap.weather.cloud);
     this.renderer.render(this.scene, this.rig.camera);
   }
 

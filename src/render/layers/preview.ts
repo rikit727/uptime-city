@@ -9,6 +9,8 @@ const BLOCKED = new Color('#d03030');
 export interface PreviewTiles {
   affected: readonly number[];
   blocked: readonly number[];
+  /** Tiles of buildings that will be demolished (orange). */
+  removed?: readonly number[];
   /** Tint affected tiles as removals (bulldoze) rather than additions. */
   removing?: boolean;
   /** Whole action invalid (e.g. too expensive): tint everything red. */
@@ -27,7 +29,7 @@ export class PreviewLayer {
   ) {
     const mat = new MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55 });
     mat.depthWrite = false;
-    this.tiles = new TileInstances(width * height, width, 0.96, 0.04, mat);
+    this.tiles = new TileInstances(width * height * 2, width, 0.96, 0.04, mat);
     this.tiles.mesh.renderOrder = 10;
     this.group.add(this.tiles.mesh);
     const cursorMat = new MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.35 });
@@ -56,6 +58,7 @@ export class PreviewLayer {
     if (p) {
       const main = p.invalid ? BLOCKED : p.removing ? REMOVE : OK;
       for (const i of p.affected) this.tiles.add(i, 0.09, main);
+      for (const i of p.removed ?? []) this.tiles.add(i, 0.1, REMOVE);
       for (const i of p.blocked) this.tiles.add(i, 0.09, BLOCKED);
     }
     this.tiles.end();

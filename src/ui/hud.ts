@@ -3,11 +3,11 @@
  * inspector, toasts and modals. It changes the game only through `UiActions`.
  */
 import { GAME_NAME } from '../config';
-import { GAME, ZONES } from '../sim';
+import { GAME, ZONES, cityTotals, weatherEvent } from '../sim';
 import type { DensityId, SimSnapshot } from '../sim';
 import type { SlotId, SlotSummary } from '../platform/saves';
 import { clear, h } from './dom';
-import { formatGameTime, formatMoney, formatRealDate } from './format';
+import { formatGameTime, formatInt, formatMW, formatMoney, formatRealDate } from './format';
 import { Inspector } from './inspector';
 import { Modal } from './modal';
 import { CONTROL_ROWS } from './shortcuts';
@@ -44,6 +44,10 @@ export class Hud {
   private readonly modal: Modal;
   private readonly timeEl = h('span', { class: 'time' });
   private readonly cashEl = h('span', { class: 'cash' });
+  private readonly weatherEl = h('span', { class: 'chip weather' });
+  private readonly powerEl = h('span', { class: 'chip power' });
+  private readonly popEl = h('span', { class: 'chip population' });
+  private lastStatsMinute = -1;
   private readonly speedButtons: HTMLButtonElement[] = [];
   private readonly toolButtons = new Map<string, HTMLButtonElement>();
   private readonly densityBar = h('div', { class: 'density-bar' });
@@ -96,6 +100,9 @@ export class Hud {
       h('span', { class: 'title' }, GAME_NAME),
       this.timeEl,
       this.cashEl,
+      this.weatherEl,
+      this.powerEl,
+      this.popEl,
       speeds,
       menu,
     );
@@ -166,11 +173,64 @@ export class Hud {
       this.cashEl.textContent = formatMoney(snap.cash);
       this.cashEl.classList.toggle('negative', snap.cash < 0);
     }
+    if (Math.floor(snap.minute / 5) !== this.lastStatsMinute) {
+      this.lastStatsMinute = Math.floor(snap.minute / 5);
+      this.updateChips(snap);
+    }
     if (speedIndex !== this.lastSpeed) {
       this.lastSpeed = speedIndex;
       this.speedButtons.forEach((b, i) => b.classList.toggle('active', i === speedIndex));
     }
     this.inspector.update(snap);
+  }
+
+  private updateChips(snap: SimSnapshot): void {
+    const wx = snap.weather;
+    const sky =
+      wx.rainMmPerHour >= 4
+        ? 'Heavy rain'
+        : wx.rainMmPerHour >= 1
+          ? 'Rain'
+          : wx.rainMmPerHour > 0
+            ? 'Drizzle'
+            : wx.cloud < 0.3
+              ? wx.sunshine > 0
+                ? 'Sunny'
+                : 'Clear'
+              : wx.cloud < 0.7
+                ? 'Partly cloudy'
+                : 'Overcast';
+    const event = wx.event ? ` · ${weatherEvent(wx.event.id).name}` : '';
+    this.weatherEl.textContent = `${Math.round(wx.temperatureC)}°C · ${sky} · ${Math.round(wx.windMs)} m/s${event}`;
+    this.weatherEl.classList.toggle('alert', wx.event !== null);
+    this.weatherEl.title = `Temperature ${wx.temperatureC.toFixed(1)}°C, rain ${wx.rainMmPerHour} mm/h, wind ${wx.windMs.toFixed(1)} m/s, cloud ${Math.round(wx.cloud * 100)}%`;
+
+    const p = snap.power;
+    const shedding = p.shedMW > 0;
+    this.powerEl.textContent =
+      p.capacityMW === 0 && p.islands.length === 0
+        ? 'No power'
+        : `⚡ ${formatMW(p.servedMW)} / ${formatMW(p.availableMW)}`;
+    this.powerEl.classList.toggle('alert', shedding);
+    this.powerEl.classList.toggle('warn', !shedding && p.buildingsOff > 0);
+    this.powerEl.title = [
+      `Demand ${formatMW(p.demandMW)}, supplied ${formatMW(p.servedMW)}`,
+      `Generation available ${formatMW(p.availableMW)} (installed ${formatMW(p.capacityMW)})`,
+      `Renewables ${formatMW(p.renewableMW)}`,
+      p.storageMWh > 0 ? `Storage ${p.storedMWh.toFixed(1)} / ${p.storageMWh} MWh` : '',
+      p.buildingsOff > 0
+        ? `${formatInt(p.buildingsOff)} buildings without power (${formatInt(p.residentsOff)} residents)`
+        : 'Every building has power',
+      shedding ? `Rolling outages: ${formatMW(p.shedMW)} short` : '',
+    ]
+      .filter((x) => x !== '')
+      .join('\n');
+
+    const t = cityTotals(snap);
+    this.popEl.textContent = `Pop ${formatInt(t.residents)} · Jobs ${formatInt(t.jobs)}`;
+    const d = snap.demand;
+    const pct = (v: number) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`;
+    this.popEl.title = `Demand: residential ${pct(d.residential)}, commercial ${pct(d.commercial)}, office ${pct(d.office)}, industrial ${pct(d.industrial)}, agricultural ${pct(d.agricultural)}`;
   }
 
   // ---- modals ------------------------------------------------------------
@@ -193,7 +253,7 @@ export class Hud {
       h(
         'p',
         {},
-        'You run the city day to day. In this early build you can lay out roads and zone land; utilities, traffic, incidents and budgets arrive in later milestones.',
+        'You run the city day to day. Lay out roads, zone land and keep the lights on: buildings only grow where there is power. Water, traffic, incidents and budgets arrive in later milestones.',
       ),
       h(
         'ol',
@@ -203,7 +263,21 @@ export class Hud {
           {},
           'Draw roads with the road tools (drag to lay an L-shaped road). Roads can bridge the river at extra cost.',
         ),
-        h('li', {}, 'Zone land beside your roads. Farmland must sit near the edge of the map.'),
+        h(
+          'li',
+          {},
+          'Zone land beside your roads. Farmland must sit near the edge of the map. Industrial plots that touch form a named estate.',
+        ),
+        h(
+          'li',
+          {},
+          'Build a power station and a substation, and join them with power lines (or place them side by side). Buildings grow within a substation’s reach; demand for each zone is shown on the population counter.',
+        ),
+        h(
+          'li',
+          {},
+          'Watch the weather and seasons: solar needs sun, wind turbines need wind (but shut down in storms), and heatwaves and cold snaps push demand up. If supply runs short, outages roll round the city; industry is cut before homes.',
+        ),
         h(
           'li',
           {},

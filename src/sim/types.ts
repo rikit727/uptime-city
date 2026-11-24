@@ -20,3 +20,20 @@ export type ZoneId = 'residential' | 'commercial' | 'office' | 'industrial' | 'a
 
 /** Zone density ids. Numeric codes live in src/data/zones.json, 0 = not applicable. */
 export type DensityId = 'low' | 'medium' | 'high';
+
+/** Season ids, in calendar order. Definitions live in src/data/weather.json. */
+export type SeasonId = 'spring' | 'summer' | 'autumn' | 'winter';
+export const SEASON_ORDER: readonly SeasonId[] = ['spring', 'summer', 'autumn', 'winter'];
+
+/** Weather event ids (src/data/weather.json `events`). */
+export type WeatherEventId = 'heatwave' | 'coldSnap' | 'storm';
+
+/** Power facility ids (src/data/power.json `facilities`). */
+export type FacilityId = 'gasPlant' | 'solarFarm' | 'windTurbine' | 'battery' | 'substation';
+export type FacilityKind = 'gas' | 'solar' | 'wind' | 'battery' | 'substation';
+
+/** Power line type ids (src/data/power.json `lines`). Codes live in the world's power layer. */
+export type LineTypeId = 'distribution' | 'transmission';
+
+/** Farm field styles, used for seasonal field colours. */
+export type FieldStyle = 'arable' | 'pasture' | 'glasshouse';
