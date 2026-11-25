@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { GAME, ROADS, roadClass, zoneType } from '../../src/sim/data';
+import { addBuilding } from '../../src/sim/buildings';
+import {
+  BUILDINGS,
+  GAME,
+  POWER,
+  ROADS,
+  facilityDef,
+  lineType,
+  roadClass,
+  zoneType,
+} from '../../src/sim/data';
 import type { RoadClassId } from '../../src/sim/types';
 import { at, testSim } from './helpers';
 
@@ -235,5 +245,139 @@ describe('preview', () => {
       to: { x: 127, y: 127 },
     });
     expect(sim.hash()).toBe(h);
+  });
+});
+
+describe('placeFacility', () => {
+  it('places on clear land, charges the cost and clears zoning', () => {
+    const sim = testSim();
+    sim.dispatch({
+      type: 'zone',
+      zone: 'residential',
+      density: 'low',
+      from: { x: 10, y: 10 },
+      to: { x: 14, y: 14 },
+    });
+    const before = sim.state.cash;
+    const rev = { ...sim.revisions };
+    const r = sim.dispatch({ type: 'placeFacility', facility: 'solarFarm', at: { x: 10, y: 10 } });
+    expect(r.ok).toBe(true);
+    expect(r.cost).toBe(facilityDef('solarFarm').cost);
+    expect(sim.state.cash).toBe(before - r.cost);
+    expect(sim.state.world.zone[at(sim, 11, 11)]).toBe(0);
+    expect(sim.state.cache.buildingAt[at(sim, 12, 12)]).not.toBe(0);
+    expect(sim.revisions.building).toBe(rev.building + 1);
+    expect(sim.revisions.power).toBe(rev.power + 1);
+  });
+
+  it('is blocked by water, roads, other buildings and the map edge', () => {
+    const sim = testSim();
+    expect(
+      sim.preview({ type: 'placeFacility', facility: 'gasPlant', at: { x: 59, y: 5 } }).ok,
+    ).toBe(false);
+    sim.dispatch({
+      type: 'buildRoad',
+      roadClass: 'local',
+      from: { x: 10, y: 5 },
+      to: { x: 10, y: 9 },
+    });
+    const onRoad = sim.preview({ type: 'placeFacility', facility: 'gasPlant', at: { x: 9, y: 5 } });
+    expect(onRoad.ok).toBe(false);
+    expect(onRoad.blocked.length).toBe(3);
+    sim.dispatch({ type: 'placeFacility', facility: 'battery', at: { x: 20, y: 20 } });
+    expect(
+      sim.preview({ type: 'placeFacility', facility: 'battery', at: { x: 21, y: 21 } }).ok,
+    ).toBe(false);
+    expect(
+      sim.preview({ type: 'placeFacility', facility: 'gasPlant', at: { x: 126, y: 0 } }).reason,
+    ).toMatch(/edge/);
+  });
+});
+
+describe('buildLine', () => {
+  it('lays lines, spans water at a multiplier and upgrades', () => {
+    const sim = testSim();
+    const r = sim.dispatch({
+      type: 'buildLine',
+      line: 'distribution',
+      from: { x: 57, y: 3 },
+      to: { x: 64, y: 3 },
+    });
+    const per = lineType('distribution').costPerTile;
+    expect(r.cost).toBe(5 * per + 3 * per * POWER.lineWaterCostMultiplier);
+    expect(sim.state.world.power[at(sim, 61, 3)]).toBe(lineType('distribution').code);
+    const up = sim.dispatch({
+      type: 'buildLine',
+      line: 'transmission',
+      from: { x: 57, y: 3 },
+      to: { x: 58, y: 3 },
+    });
+    expect(up.ok).toBe(true);
+    expect(sim.state.world.power[at(sim, 57, 3)]).toBe(lineType('transmission').code);
+  });
+
+  it('can share a tile with a road but blocks zoning', () => {
+    const sim = testSim();
+    sim.dispatch({
+      type: 'buildRoad',
+      roadClass: 'local',
+      from: { x: 5, y: 5 },
+      to: { x: 15, y: 5 },
+    });
+    expect(
+      sim.dispatch({
+        type: 'buildLine',
+        line: 'distribution',
+        from: { x: 5, y: 5 },
+        to: { x: 15, y: 5 },
+      }).ok,
+    ).toBe(true);
+    sim.dispatch({
+      type: 'buildLine',
+      line: 'distribution',
+      from: { x: 5, y: 8 },
+      to: { x: 15, y: 8 },
+    });
+    const z = sim.preview({
+      type: 'zone',
+      zone: 'residential',
+      density: 'low',
+      from: { x: 5, y: 7 },
+      to: { x: 15, y: 9 },
+    });
+    expect(z.blocked).toHaveLength(11);
+  });
+
+  it('is refused through a grown building', () => {
+    const sim = testSim();
+    sim.dispatch({
+      type: 'zone',
+      zone: 'residential',
+      density: 'low',
+      from: { x: 10, y: 10 },
+      to: { x: 10, y: 10 },
+    });
+    addBuilding(sim.state, BUILDINGS.types[0]!.code, 10, 10, 1);
+    const r = sim.dispatch({
+      type: 'buildLine',
+      line: 'distribution',
+      from: { x: 5, y: 10 },
+      to: { x: 15, y: 10 },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/building is in the way/);
+  });
+});
+
+describe('bulldoze buildings', () => {
+  it('removes whole buildings and facilities, charging per footprint tile', () => {
+    const sim = testSim();
+    sim.dispatch({ type: 'placeFacility', facility: 'gasPlant', at: { x: 10, y: 10 } });
+    const r = sim.dispatch({ type: 'bulldoze', from: { x: 10, y: 10 }, to: { x: 10, y: 10 } });
+    expect(r.ok).toBe(true);
+    expect(r.cost).toBe(9 * BUILDINGS.demolishCostPerTile);
+    expect(sim.state.buildings).toHaveLength(0);
+    expect(sim.state.cache.buildingAt.some((v) => v !== 0)).toBe(false);
+    expect(sim.state.cache.network.islands).toHaveLength(0);
   });
 });

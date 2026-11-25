@@ -1,10 +1,12 @@
 /** The build toolbar's tools. Pure data: the app binds behaviour, the UI draws buttons. */
-import type { RoadClassId, ZoneId } from '../sim';
+import type { FacilityId, LineTypeId, RoadClassId, ZoneId } from '../sim';
 
 export type ToolId =
   | { kind: 'inspect' }
   | { kind: 'road'; roadClass: RoadClassId }
   | { kind: 'zone'; zone: ZoneId }
+  | { kind: 'line'; line: LineTypeId }
+  | { kind: 'facility'; facility: FacilityId }
   | { kind: 'bulldoze' };
 
 export interface ToolDef {
@@ -13,7 +15,7 @@ export interface ToolDef {
   /** Keyboard shortcut (KeyboardEvent.code) and its display label. */
   code: string;
   keyLabel: string;
-  group: 'select' | 'roads' | 'zones' | 'demolish';
+  group: 'select' | 'roads' | 'zones' | 'power' | 'demolish';
   tool: ToolId;
   swatch?: string;
 }
@@ -92,6 +94,62 @@ export const TOOLS: readonly ToolDef[] = [
     tool: { kind: 'zone', zone: 'agricultural' },
   },
   {
+    key: 'line:distribution',
+    label: 'Distribution line',
+    code: 'KeyP',
+    keyLabel: 'P',
+    group: 'power',
+    tool: { kind: 'line', line: 'distribution' },
+  },
+  {
+    key: 'line:transmission',
+    label: 'Transmission line',
+    code: 'KeyT',
+    keyLabel: 'T',
+    group: 'power',
+    tool: { kind: 'line', line: 'transmission' },
+  },
+  {
+    key: 'facility:substation',
+    label: 'Substation',
+    code: 'KeyU',
+    keyLabel: 'U',
+    group: 'power',
+    tool: { kind: 'facility', facility: 'substation' },
+  },
+  {
+    key: 'facility:gasPlant',
+    label: 'Gas power station',
+    code: 'KeyN',
+    keyLabel: 'N',
+    group: 'power',
+    tool: { kind: 'facility', facility: 'gasPlant' },
+  },
+  {
+    key: 'facility:solarFarm',
+    label: 'Solar farm',
+    code: 'KeyL',
+    keyLabel: 'L',
+    group: 'power',
+    tool: { kind: 'facility', facility: 'solarFarm' },
+  },
+  {
+    key: 'facility:windTurbine',
+    label: 'Wind turbine',
+    code: 'KeyV',
+    keyLabel: 'V',
+    group: 'power',
+    tool: { kind: 'facility', facility: 'windTurbine' },
+  },
+  {
+    key: 'facility:battery',
+    label: 'Battery storage',
+    code: 'KeyM',
+    keyLabel: 'M',
+    group: 'power',
+    tool: { kind: 'facility', facility: 'battery' },
+  },
+  {
     key: 'bulldoze',
     label: 'Bulldoze',
     code: 'KeyB',
@@ -101,5 +159,17 @@ export const TOOLS: readonly ToolDef[] = [
   },
 ];
 
-export const toolKey = (t: ToolId): string =>
-  t.kind === 'road' ? `road:${t.roadClass}` : t.kind === 'zone' ? `zone:${t.zone}` : t.kind;
+export function toolKey(t: ToolId): string {
+  switch (t.kind) {
+    case 'road':
+      return `road:${t.roadClass}`;
+    case 'zone':
+      return `zone:${t.zone}`;
+    case 'line':
+      return `line:${t.line}`;
+    case 'facility':
+      return `facility:${t.facility}`;
+    default:
+      return t.kind;
+  }
+}

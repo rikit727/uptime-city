@@ -3,7 +3,7 @@
  * builds them, the sim validates and applies them, and they are logged with
  * their tick so a game can be replayed exactly.
  */
-import type { DensityId, RoadClassId, TileCoord, ZoneId } from '../types';
+import type { DensityId, FacilityId, LineTypeId, RoadClassId, TileCoord, ZoneId } from '../types';
 
 export interface BuildRoadCommand {
   type: 'buildRoad';
@@ -27,11 +27,30 @@ export interface BulldozeCommand {
   to: TileCoord;
 }
 
-export type Command = BuildRoadCommand | ZoneCommand | BulldozeCommand;
+/** Place a power facility with its footprint's top-left corner at `at`. */
+export interface PlaceFacilityCommand {
+  type: 'placeFacility';
+  facility: FacilityId;
+  at: TileCoord;
+}
+
+export interface BuildLineCommand {
+  type: 'buildLine';
+  line: LineTypeId;
+  from: TileCoord;
+  to: TileCoord;
+}
+
+export type Command =
+  BuildRoadCommand | ZoneCommand | BulldozeCommand | PlaceFacilityCommand | BuildLineCommand;
 export type CommandType = Command['type'];
 
-/** Which state layers a command changes, so renderers know what to rebuild. */
-export type Layer = 'terrain' | 'road' | 'zone';
+/**
+ * Which state layers changed, so renderers know what to rebuild. `building`:
+ * buildings added or removed; `power`: lines or facilities; `supply`: which
+ * buildings have power (lights at night).
+ */
+export type Layer = 'terrain' | 'road' | 'zone' | 'building' | 'power' | 'supply';
 
 /**
  * The outcome of planning a command against the current state, without changing it.
@@ -47,6 +66,10 @@ export interface CommandPlan {
   affected: number[];
   /** Tile indices in the drag area that cannot be used (for red preview tiles). */
   blocked: number[];
+  /** Ids of buildings the command will demolish. */
+  demolish: number[];
+  /** Footprint tiles of those buildings (for orange preview tiles). */
+  removed: number[];
   /** Layers the command touches. */
   layers: Layer[];
 }

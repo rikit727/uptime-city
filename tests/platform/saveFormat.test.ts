@@ -32,7 +32,23 @@ function playedSim(): Simulation {
     from: { x: 0, y: 0 },
     to: { x: 10, y: 10 },
   });
-  sim.step(2000);
+  sim.dispatch({
+    type: 'zone',
+    zone: 'residential',
+    density: 'medium',
+    from: { x: 2, y: 58 },
+    to: { x: 20, y: 63 },
+  });
+  sim.dispatch({ type: 'placeFacility', facility: 'gasPlant', at: { x: 22, y: 66 } });
+  sim.dispatch({ type: 'placeFacility', facility: 'substation', at: { x: 10, y: 66 } });
+  sim.dispatch({
+    type: 'buildLine',
+    line: 'distribution',
+    from: { x: 12, y: 67 },
+    to: { x: 21, y: 67 },
+  });
+  sim.dispatch({ type: 'placeFacility', facility: 'battery', at: { x: 22, y: 70 } });
+  sim.step(2003);
   return sim;
 }
 
@@ -56,6 +72,22 @@ describe('save format', () => {
     const json = JSON.stringify(createSaveFile(sim, 'test'));
     const loaded = simulationFromSave(parseSaveFile(json));
     expect(loaded.hash()).toBe(sim.hash());
+  });
+
+  it('saves buildings, estates and weather', () => {
+    const sim = playedSim();
+    expect(sim.state.buildings.length).toBeGreaterThan(5);
+    expect(sim.state.estates.length).toBeGreaterThan(0);
+    const loaded = simulationFromSave(parseSaveFile(JSON.stringify(createSaveFile(sim, 't'))));
+    expect(loaded.state.buildings).toEqual(sim.state.buildings);
+    expect(loaded.state.estates).toEqual(sim.state.estates);
+    expect(loaded.state.weather).toEqual(sim.state.weather);
+    expect(Array.from(loaded.state.cache.buildingAt)).toEqual(
+      Array.from(sim.state.cache.buildingAt),
+    );
+    expect(Array.from(loaded.state.cache.network.coverage)).toEqual(
+      Array.from(sim.state.cache.network.coverage),
+    );
   });
 
   it('a loaded game continues exactly like the original', () => {
@@ -99,6 +131,45 @@ describe('save format', () => {
 });
 
 describe('migrations', () => {
+  it('upgrades a version 1 save (milestone 1) to the current version', () => {
+    const v1 = {
+      format: SAVE_FORMAT,
+      version: 1,
+      meta: {
+        gameName: 'x',
+        label: 'old',
+        savedAt: '2026-01-01T00:00:00.000Z',
+        day: 1,
+        minute: 400,
+        cash: 5,
+        seed: 3,
+      },
+      state: {
+        seed: 3,
+        tick: 40,
+        minute: 400,
+        rngState: 1234,
+        cash: 5,
+        world: {
+          width: 128,
+          height: 128,
+          terrain: [0, 16384],
+          road: [0, 100, 1, 5, 0, 16279],
+          zone: [0, 16384],
+          density: [0, 16384],
+        },
+      },
+    };
+    const save = parseSaveFile(JSON.stringify(v1));
+    expect(save.version).toBe(CURRENT_SAVE_VERSION);
+    const sim = simulationFromSave(save);
+    expect(sim.state.buildings).toHaveLength(0);
+    expect(sim.state.world.road[102]).toBe(1);
+    expect(sim.state.rules.weatherEvents).toBe(true);
+    sim.step(1500); // runs fine after migration
+    expect(sim.state.tick).toBe(1540);
+  });
+
   it('runs each step in order up to the target version', () => {
     const migrations = {
       1: (s: { version: number }) => ({ ...s, version: 2, a: 1 }),

@@ -17,6 +17,8 @@ export interface WorldState {
   readonly zone: Uint8Array;
   /** Zone density code per tile (0 = n/a). */
   readonly density: Uint8Array;
+  /** Power line type code per tile (0 = none). See src/data/power.json `lines`. */
+  readonly power: Uint8Array;
 }
 
 export function createWorld(width: number, height: number): WorldState {
@@ -28,6 +30,7 @@ export function createWorld(width: number, height: number): WorldState {
     road: new Uint8Array(n),
     zone: new Uint8Array(n),
     density: new Uint8Array(n),
+    power: new Uint8Array(n),
   };
 }
 

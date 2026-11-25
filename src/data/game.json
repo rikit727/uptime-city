@@ -9,5 +9,8 @@
   "river": {
     "minWidth": 3,
     "maxWidth": 5
+  },
+  "calendar": {
+    "daysPerSeason": 30
   }
 }

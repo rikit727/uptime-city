@@ -19,3 +19,8 @@ with the milestone and reason.
 - Natural disasters such as flooding.
 - Audio (generated in code, no external assets).
 - Moving the simulation into a Web Worker if profiling shows the need.
+- A proper power-flow model (shared line limits, losses) instead of the
+  per-substation widest-path limit used in v1.
+- Buildings redeveloping in place to a higher density when demand and land
+  value allow, instead of needing demolition and regrowth.
+- Weekday/weekend demand patterns (the v1 calendar has no days of the week).

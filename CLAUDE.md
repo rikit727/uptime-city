@@ -47,7 +47,13 @@ Before committing: `npm run lint && npm test && npm run build`.
   `seedState(seed, stream)`). Iterate in index order.
 - **Mutations:** only command `apply` functions and systems mutate `SimState`.
   If a change affects rendering, bump the matching `revisions` layer (commands
-  do this via `plan.layers`; systems will need to do it explicitly).
+  do this via `plan.layers`; systems call `ctx.touch(layer)`).
+- **Derived cache:** `SimState.cache` (tile → building, power network, last
+  dispatch figures, estates per tile) is never saved and is rebuilt on load
+  by `rebuildCache()`. It must be a pure function of saved state. Commands
+  that change zoning, lines or facilities call `rebuildEstates()` /
+  `rebuildNetwork()`; use `addBuilding()` / `removeBuildings()` so the tile
+  index stays in step.
 - **Imports:** in `src/` outside the sim, import sim things from `src/sim` (the index),
   not deep paths (tests may import deep paths). Use `import type` for types (lint enforces).
 - **Style:** Prettier (single quotes, 100 cols). Strict TS with
@@ -83,7 +89,9 @@ entry in `src/ui/tools.ts`.
 
 1. Create `src/sim/systems/<name>.ts` exporting a `SimSystem`
    (`{ id, tick(ctx) }`). Read and write `ctx.state`; use `ctx.state.rng` for
-   randomness; `ctx.emit()` for notifications.
+   randomness; `ctx.emit()` for notifications; `ctx.touch(layer)` when render
+   output changes. Keep the model in its own module (`src/sim/<name>.ts`) and
+   the system file thin (see `weather`, `power`, `growth`).
 2. Add any new state to `SimState` (`src/sim/state.ts`), initialise it in
    `createInitialState`, serialise it in `src/sim/serialize.ts`, then bump
    `CURRENT_SAVE_VERSION` and add a migration in
@@ -93,14 +101,42 @@ entry in `src/ui/tools.ts`.
 4. If it is expensive, process a slice per tick (keep a cursor in state).
 5. Write unit tests, including a determinism check.
 
-### A building (from milestone 2)
+### A building
 
-Buildings are not implemented yet. The plan: definitions in
-`src/data/buildings.json` (id, stable numeric code, footprint, zone/density or
-service category, jobs/residents, utility demand, cost, model parameters:
-box sizes, roof type, colours). The growth system places them on zoned tiles;
-render draws them with `InstancedMesh` grouped by model. Update this section
-when milestone 2 lands.
+Grown buildings are pure data in `src/data/buildings.json` (`types`). Add an
+entry with:
+
+- `id` (unique string) and `code` (new unique number below 200: never reuse),
+  `name`, `category` (player-facing subtype, e.g. "Light industry").
+- `zone` and `densities` (empty list for agricultural), `weight` (how often
+  growth picks it among the types that fit), `footprint` `[w, d]` in tiles.
+- `residents`, `jobs` (at full occupancy), `powerKw` (peak load),
+  `priority` (load-shedding order, index into `power.json: priorityNames`),
+  `heightJitter`. Farms also take `fields` (`arable` | `pasture` |
+  `glasshouse`, coloured by season from `fieldColours`) and `exportPerDay`.
+- `parts`: the model, in tile units relative to the footprint's top-left
+  corner. Each part has `shape` (`box`, `gable`, `cylinder`, `tunnel`,
+  `rotor`), centre `x`/`z`, optional base `y`, size `w`/`d`/`h`, `colour` (one
+  or a list; the renderer picks per building) and optional `windows: true`
+  (window bands lit at night when powered).
+
+No code changes are needed. Growth places a type when its whole footprint is
+empty zoned land of the same zone and density, with a road along one edge,
+covered by an energised substation. A new primitive shape needs a unit
+geometry in `src/render/layers/shapes.ts`, a batch in `layers/buildings.ts`
+and the `PartShape` union in `src/sim/data.ts`.
+
+### A power facility or line type
+
+Facilities live in `src/data/power.json` (`facilities`), codes 200+. Fields:
+`id`, `code`, `name`, `kind` (`gas`, `solar`, `wind`, `battery`,
+`substation`), `footprint`, `capacityMW`, `cost`, `jobs`, `parts` (as for
+buildings), plus `storageMWh`/`efficiency` (batteries), `serviceRadius`
+(substations) or `wind` (`cutInMs`, `ratedMs`, `cutOutMs`). Add the id to
+`FacilityId` in `src/sim/types.ts` and a tool in `src/ui/tools.ts`. A new
+`kind` needs handling in `src/sim/power.ts` (`availableMW`, dispatch). Line
+types (`lines`) need `id`, `code`, `capacityMW`, `costPerTile`, `colour`, the
+id in `LineTypeId`, a pylon height in `render/layers/power.ts` and a tool.
 
 ### An asset type (from milestone 4)
 

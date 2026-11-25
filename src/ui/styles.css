@@ -115,8 +115,9 @@ kbd {
   left: 10px;
   right: 10px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
+  gap: 6px 10px;
   padding: 6px 12px;
 }
 
@@ -126,9 +127,37 @@ kbd {
 }
 
 .topbar .time,
-.topbar .cash {
+.topbar .cash,
+.topbar .chip {
   font-variant-numeric: tabular-nums;
-  min-width: 110px;
+}
+
+.topbar .time {
+  min-width: 172px;
+}
+
+.topbar .chip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.topbar .chip.alert {
+  color: #1d1d1d;
+  background: var(--warn);
+}
+
+.topbar .chip.warn {
+  color: var(--warn);
+}
+
+.topbar .chip.power.alert {
+  color: #fff;
+  background: var(--danger);
 }
 
 .topbar .cash.negative {
@@ -155,11 +184,17 @@ kbd {
   position: absolute;
   top: 64px;
   left: 10px;
-  width: 172px;
+  width: 182px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
   padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+}
+
+.toolbar button.tool {
+  padding: 3px 8px;
 }
 
 .tool-group-label {

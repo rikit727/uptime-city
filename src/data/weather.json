@@ -1,0 +1,101 @@
+{
+  "seasons": [
+    {
+      "id": "spring",
+      "name": "Spring",
+      "meanC": 10,
+      "diurnalRangeC": 9,
+      "dayLengthHours": 13,
+      "solarPeak": 0.75,
+      "cloudMean": 0.55,
+      "wetDayChance": 0.4,
+      "windMeanMs": 5
+    },
+    {
+      "id": "summer",
+      "name": "Summer",
+      "meanC": 18,
+      "diurnalRangeC": 10,
+      "dayLengthHours": 16,
+      "solarPeak": 1,
+      "cloudMean": 0.42,
+      "wetDayChance": 0.3,
+      "windMeanMs": 4
+    },
+    {
+      "id": "autumn",
+      "name": "Autumn",
+      "meanC": 11,
+      "diurnalRangeC": 7,
+      "dayLengthHours": 11,
+      "solarPeak": 0.6,
+      "cloudMean": 0.6,
+      "wetDayChance": 0.5,
+      "windMeanMs": 6
+    },
+    {
+      "id": "winter",
+      "name": "Winter",
+      "meanC": 4.5,
+      "diurnalRangeC": 6,
+      "dayLengthHours": 8,
+      "solarPeak": 0.35,
+      "cloudMean": 0.68,
+      "wetDayChance": 0.5,
+      "windMeanMs": 6.5
+    }
+  ],
+  "anomaly": { "persistence": 0.75, "dailySpreadC": 2.5, "maxC": 6 },
+  "cloud": {
+    "dailySpread": 0.25,
+    "wetDayBoost": 0.25,
+    "hourlyJitter": 0.12,
+    "irradianceLoss": 0.75
+  },
+  "rain": { "showerChancePerHour": 0.45, "meanMmPerHour": 1.5, "maxMmPerHour": 6 },
+  "wind": { "dailySpread": 0.5, "hourlyJitter": 0.3, "maxMs": 32 },
+  "events": [
+    {
+      "id": "heatwave",
+      "name": "Heatwave",
+      "seasons": ["summer"],
+      "chancePerDay": 0.04,
+      "minDays": 3,
+      "maxDays": 6,
+      "tempOffsetC": 9,
+      "cloudFactor": 0.3,
+      "wetFactor": 0.1,
+      "windFactor": 0.7,
+      "minWindMs": 0,
+      "minRainMmPerHour": 0
+    },
+    {
+      "id": "coldSnap",
+      "name": "Cold snap",
+      "seasons": ["winter"],
+      "chancePerDay": 0.05,
+      "minDays": 3,
+      "maxDays": 7,
+      "tempOffsetC": -8,
+      "cloudFactor": 0.6,
+      "wetFactor": 0.4,
+      "windFactor": 0.8,
+      "minWindMs": 0,
+      "minRainMmPerHour": 0
+    },
+    {
+      "id": "storm",
+      "name": "Storm",
+      "seasons": ["autumn", "winter"],
+      "chancePerDay": 0.035,
+      "minDays": 1,
+      "maxDays": 2,
+      "tempOffsetC": -1,
+      "cloudFactor": 1.5,
+      "wetFactor": 3,
+      "windFactor": 1,
+      "minWindMs": 22,
+      "minRainMmPerHour": 6
+    }
+  ]
+}

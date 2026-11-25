@@ -3,8 +3,18 @@
  * single source of truth and document changes in ARCHITECTURE.md ("Sim tick order").
  */
 import { clockSystem } from './clock';
+import { demandSystem } from './demand';
+import { growthSystem } from './growth';
+import { powerSystem } from './power';
 import type { SimSystem } from './types';
+import { weatherSystem } from './weather';
 
 export type { SimSystem, TickContext } from './types';
 
-export const SYSTEMS: readonly SimSystem[] = [clockSystem];
+export const SYSTEMS: readonly SimSystem[] = [
+  clockSystem,
+  weatherSystem,
+  demandSystem,
+  powerSystem,
+  growthSystem,
+];

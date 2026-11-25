@@ -1,12 +1,14 @@
 /**
  * One hemisphere light and one directional "sun". The sun swings across the sky
- * with the game clock, and light intensity and sky colour fade towards night.
+ * with the game clock; light intensity and sky colour fade towards night using
+ * the sim's seasonal day length, and cloud cover greys and dims the sky.
  */
 import type { Scene } from 'three';
 import { Color, DirectionalLight, HemisphereLight } from 'three';
-import { MINUTES_PER_DAY, minuteOfDay } from '../sim';
+import { MINUTES_PER_DAY, daylight, minuteOfDay } from '../sim';
 
 const DAY_SKY = new Color('#a9cbe3');
+const OVERCAST_SKY = new Color('#9aa3ab');
 const NIGHT_SKY = new Color('#0e1724');
 
 export class Lighting {
@@ -34,18 +36,11 @@ export class Lighting {
     this.sun.castShadow = enabled;
   }
 
-  /** 0 at night, 1 at full day, smooth through dawn (~05:00–07:00) and dusk (~19:00–21:00). */
-  static daylight(minute: number): number {
-    const h = minuteOfDay(minute) / 60;
-    const s = (a: number, b: number, x: number) => {
-      const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
-      return t * t * (3 - 2 * t);
-    };
-    return s(5, 7, h) * (1 - s(19, 21, h));
-  }
+  private readonly daySky = new Color();
 
-  update(minute: number): void {
-    const day = Lighting.daylight(minute);
+  /** `cloud` is 0..1 cover from the weather. */
+  update(minute: number, cloud: number): void {
+    const day = daylight(minute);
     const angle = (minuteOfDay(minute) / MINUTES_PER_DAY) * Math.PI * 2 - Math.PI / 2;
     // Sun rises in the east (+x), peaks at noon, sets in the west.
     const elevation = Math.max(0.25, Math.sin(angle));
@@ -54,9 +49,10 @@ export class Lighting {
       40 + elevation * 120,
       this.centre.z + 60,
     );
-    this.sun.intensity = 0.15 + 1.5 * day;
-    this.hemi.intensity = 0.35 + 0.8 * day;
-    this.sky.copy(NIGHT_SKY).lerp(DAY_SKY, day);
+    this.sun.intensity = 0.15 + 1.5 * day * (1 - 0.45 * cloud);
+    this.hemi.intensity = 0.35 + 0.8 * day * (1 - 0.15 * cloud);
+    this.daySky.copy(DAY_SKY).lerp(OVERCAST_SKY, cloud);
+    this.sky.copy(NIGHT_SKY).lerp(this.daySky, day);
     this.scene.background = this.sky;
   }
 }

@@ -1,9 +1,12 @@
+import type { Layer } from '../commands/types';
 import type { SimEvent } from '../events';
 import type { SimState } from '../state';
 
 export interface TickContext {
   readonly state: SimState;
   emit(event: SimEvent): void;
+  /** Mark a render layer as changed (bumps Simulation.revisions). */
+  touch(layer: Layer): void;
 }
 
 /**
