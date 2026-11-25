@@ -7,11 +7,13 @@ import type { SimState } from '../state';
 import {
   applyAssignCrew,
   applyCancelOrder,
+  applyCombinePermits,
   applyRaiseMaintenance,
   applySendBottledWater,
   applySetOrderPriority,
   planAssignCrew,
   planCancelOrder,
+  planCombinePermits,
   planRaiseMaintenance,
   planSendBottledWater,
   planSetOrderPriority,
@@ -46,6 +48,7 @@ const handlers: HandlerMap = {
   assignCrew: { plan: planAssignCrew, apply: applyAssignCrew },
   cancelOrder: { plan: planCancelOrder, apply: applyCancelOrder },
   sendBottledWater: { plan: planSendBottledWater, apply: applySendBottledWater },
+  combinePermits: { plan: planCombinePermits, apply: applyCombinePermits },
 };
 
 function handlerFor(cmd: Command): Handler<Command> | undefined {

@@ -23,14 +23,22 @@ function roadSeconds(code: number): number {
   return SECONDS_PER_KMH / speed;
 }
 
-/** Minutes from tile a to tile b: along the road if they are adjacent road tiles, else off-road. */
-export function legMinutes(w: WorldState, a: number, b: number): number {
+/** Per-tile travel-time multipliers for road tiles (1 = free flow). */
+export type SlowFactors = ArrayLike<number>;
+
+/**
+ * Minutes from tile a to tile b: along the road if they are adjacent road tiles
+ * (× the congestion multiplier of b, if given), else off-road.
+ */
+export function legMinutes(w: WorldState, a: number, b: number, slow?: SlowFactors): number {
   const ax = a % w.width;
   const ay = (a - ax) / w.width;
   const bx = b % w.width;
   const by = (b - bx) / w.width;
   const d = Math.hypot(ax - bx, ay - by);
-  if (d === 1 && w.road[a] !== 0 && w.road[b] !== 0) return roadSeconds(w.road[b]!) / 60;
+  if (d === 1 && w.road[a] !== 0 && w.road[b] !== 0) {
+    return (roadSeconds(w.road[b]!) * (slow ? (slow[b] ?? 1) : 1)) / 60;
+  }
   return (d * SECONDS_PER_KMH) / ASSETS.crews.offRoadKmh / 60;
 }
 
@@ -56,11 +64,15 @@ export function nearestRoad(w: WorldState, tile: number, radius: number): number
 }
 
 /** Binary min-heap of (cost, tile); ties pop the lower tile first. */
-class MinHeap {
+export class MinHeap {
   private c: number[] = [];
   private t: number[] = [];
   get size(): number {
     return this.c.length;
+  }
+  clear(): void {
+    this.c.length = 0;
+    this.t.length = 0;
   }
   private less(ca: number, ta: number, cb: number, tb: number): boolean {
     return ca < cb || (ca === cb && ta < tb);
@@ -107,7 +119,7 @@ class MinHeap {
 }
 
 /** Fastest road path between two road tiles, or null if they are not connected. */
-function roadPath(w: WorldState, from: number, to: number): number[] | null {
+function roadPath(w: WorldState, from: number, to: number, slow?: SlowFactors): number[] | null {
   if (from === to) return [from];
   const n = w.width * w.height;
   const cost = new Float64Array(n).fill(Infinity);
@@ -123,7 +135,7 @@ function roadPath(w: WorldState, from: number, to: number): number[] | null {
     const nb = [x > 0 ? t - 1 : -1, x < w.width - 1 ? t + 1 : -1, t - w.width, t + w.width];
     for (const m of nb) {
       if (m < 0 || m >= n || w.road[m] === 0) continue;
-      const cand = c + roadSeconds(w.road[m]!);
+      const cand = c + roadSeconds(w.road[m]!) * (slow ? (slow[m] ?? 1) : 1);
       if (cand < cost[m]!) {
         cost[m] = cand;
         prev[m] = t;
@@ -137,15 +149,15 @@ function roadPath(w: WorldState, from: number, to: number): number[] | null {
   return out.reverse();
 }
 
-/** Plan a crew's drive from one tile to another. */
-export function planRoute(w: WorldState, from: number, to: number): Route {
+/** Plan a crew's drive from one tile to another, optionally slowed by congestion. */
+export function planRoute(w: WorldState, from: number, to: number, slow?: SlowFactors): Route {
   const r = ASSETS.crews.roadSearchRadius;
   const a = nearestRoad(w, from, r);
   const b = nearestRoad(w, to, r);
   let path: number[] = [from, to];
   if (from === to) path = [from];
   else if (a >= 0 && b >= 0) {
-    const road = roadPath(w, a, b);
+    const road = roadPath(w, a, b, slow);
     if (road) {
       path = road;
       if (a !== from) path.unshift(from);
@@ -153,7 +165,7 @@ export function planRoute(w: WorldState, from: number, to: number): Route {
     }
   }
   let minutes = 0;
-  for (let k = 1; k < path.length; k++) minutes += legMinutes(w, path[k - 1]!, path[k]!);
+  for (let k = 1; k < path.length; k++) minutes += legMinutes(w, path[k - 1]!, path[k]!, slow);
   return { path, minutes };
 }
 

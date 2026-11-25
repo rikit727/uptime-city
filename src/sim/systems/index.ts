@@ -8,6 +8,7 @@ import { demandSystem } from './demand';
 import { growthSystem } from './growth';
 import { incidentsSystem } from './incidents';
 import { powerSystem } from './power';
+import { trafficSystem } from './traffic';
 import { waterSystem } from './water';
 import type { SimSystem } from './types';
 import { weatherSystem } from './weather';
@@ -20,6 +21,7 @@ export const SYSTEMS: readonly SimSystem[] = [
   demandSystem,
   powerSystem,
   waterSystem,
+  trafficSystem,
   assetsSystem,
   incidentsSystem,
   growthSystem,

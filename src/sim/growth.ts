@@ -10,13 +10,15 @@
  * zone and density fits with the tile as its top-left corner, a road along its
  * edge and a water main with good pressure beside it (farms may use the river
  * instead). Occupancy then grows hourly with demand while powered and supplied
- * with water, and falls after a long power or water outage. Land value, services and commute times join the growth
- * test in later milestones (see ARCHITECTURE.md decision log).
+ * with water, and falls after a long power or water outage. Long commutes from
+ * the tile's traffic cell (traffic.ts) slow growth. Land value and services
+ * join the growth test in M6 (see ARCHITECTURE.md decision log).
  */
 import { GROWTH, WATER, zoneTypeByCode, grownTypesFor } from './data';
 import type { GrownBuildingDef } from './data';
 import { addBuilding, grownDefOf, jobsOf, residentsOf } from './buildings';
 import { isEnergised } from './power';
+import { commuteFactor } from './traffic';
 import { waterServiceFor } from './water';
 import type { Building, SimState } from './state';
 import { Terrain } from './types';
@@ -121,7 +123,8 @@ export function growSlice(state: SimState, count = GROWTH.scanTilesPerTick): num
     if (!zone) continue;
     const demand = state.demand[zone.id];
     if (demand <= 0 || !isEnergised(state, t)) continue;
-    if (!state.rng.chance(GROWTH.spawnChance * demand)) continue;
+    const commute = zone.id === 'agricultural' ? 1 : commuteFactor(state, t);
+    if (!state.rng.chance(GROWTH.spawnChance * demand * commute)) continue;
     const x = t % w.width;
     const y = (t - x) / w.width;
     const options = grownTypesFor(z, w.density[t]!).filter(

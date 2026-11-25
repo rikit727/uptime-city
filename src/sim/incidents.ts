@@ -12,7 +12,11 @@
  * work, so they are rebuilt on load: a burst main leaks and passes no water on
  * until a crew isolates it; a cable fault (or line work) takes the line tile
  * out of the power network; a failed facility (or one being overhauled) is out
- * of service; excavations and resurfacing close the road (traffic in M5).
+ * of service; excavations and resurfacing close the road, fully or one lane
+ * (traffic.ts re-routes around them).
+ *
+ * Works on roads run under street works permits (roadworks.ts): a crew is not
+ * sent before its permit's slot starts.
  */
 import { ASSETS, buildingDef } from './data';
 import type { FacilityAssetClass, TileAssetClass } from './data';
@@ -29,7 +33,19 @@ import { grownDefOf } from './buildings';
 import { availableCrews, crewCount, crewPosition, returnCrew, sendCrew } from './crews';
 import type { SimEvent } from './events';
 import { rebuildNetwork } from './power';
-import type { AssetRef, Crew, Incident, SimState, WorkOrder } from './state';
+import {
+  checkOverruns,
+  createPermit,
+  detachOrder,
+  durationFactor,
+  onSiteMinutes,
+  permitAllows,
+  recordDig,
+  repairClosure,
+  roadTileOf,
+} from './roadworks';
+import type { AssetRef, Crew, Incident, RoadClosure, SimState, WorkOrder } from './state';
+import { refreshTrafficTimes } from './traffic';
 import { MINUTES_PER_DAY } from './time';
 import type { CrewType, IncidentKind } from './types';
 import { serviceTile } from './water';
@@ -78,13 +94,19 @@ export function rebuildFaults(state: SimState): void {
     const { layer, id } = o.asset;
     if (layer === 'facility') f.offline.add(id);
     else if (layer === 'line') add(id, FAULT.LINE_OFF);
-    else if (layer === 'road') add(id, FAULT.ROAD_CLOSED);
-    else {
+    else if (layer === 'main') {
       f.tile[id] = f.tile[id]! & ~FAULT.BURST;
       add(id, FAULT.MAIN_OFF);
-      if (w.road[id] !== 0) add(id, FAULT.ROAD_CLOSED);
+    }
+    if ((layer === 'road' || layer === 'main') && w.road[id] !== 0 && o.closure !== 'none') {
+      add(id, o.closure === 'lane' ? FAULT.LANE_CLOSED : FAULT.ROAD_CLOSED);
     }
   }
+  // A full closure wins over a lane closure on the same tile.
+  for (let t = 0; t < f.tile.length; t++) {
+    if (f.tile[t]! & FAULT.ROAD_CLOSED) f.tile[t] = f.tile[t]! & ~FAULT.LANE_CLOSED;
+  }
+  refreshTrafficTimes(state);
 }
 
 /** Does a fault on this asset change the power network (a line or a power facility)? */
@@ -134,16 +156,43 @@ function siteTileOf(state: SimState, ref: AssetRef): number {
   return b ? b.y * state.world.width + b.x : 0;
 }
 
+/** How a new order will be worked: minutes, cost, road closure, night working. */
+export interface OrderTerms {
+  minutes: number;
+  cost: number;
+  closure: RoadClosure;
+  night: boolean;
+  combined: boolean;
+}
+
+/** Default terms: the class's figures, full closure for planned works on a road. */
+export function defaultTerms(
+  state: SimState,
+  type: 'repair' | 'maintenance',
+  ref: AssetRef,
+  cls: TileAssetClass | FacilityAssetClass,
+): OrderTerms {
+  const spec = type === 'repair' ? cls.repair : cls.maintenance;
+  const closure: RoadClosure =
+    type === 'repair' ? repairClosure(state, ref) : roadTileOf(state, ref) >= 0 ? 'full' : 'none';
+  return {
+    minutes: Math.round(spec.minutes * durationFactor(closure, false)),
+    cost: spec.cost,
+    closure,
+    night: false,
+    combined: false,
+  };
+}
+
 function newOrder(
   state: SimState,
   type: 'repair' | 'maintenance',
   ref: AssetRef,
   crew: CrewType,
-  cls: TileAssetClass | FacilityAssetClass,
+  terms: OrderTerms,
   incidentId: number,
   priority: number,
 ): WorkOrder {
-  const spec = type === 'repair' ? cls.repair : cls.maintenance;
   const o: WorkOrder = {
     id: state.assets.nextOrderId++,
     type,
@@ -155,11 +204,15 @@ function newOrder(
     manualPriority: false,
     status: 'queued',
     createdMinute: state.minute,
-    workMinutes: spec.minutes,
-    cost: spec.cost,
+    workMinutes: terms.minutes,
+    cost: terms.cost,
     prepaid: type === 'maintenance',
     crewId: 0,
     startedMinute: -1,
+    closure: terms.closure,
+    night: terms.night,
+    permitId: 0,
+    combined: terms.combined,
   };
   state.workOrders.push(o);
   return o;
@@ -220,9 +273,13 @@ export function openIncident(
     const existing = orderOnAsset(state, asset);
     if (existing) cancelOrder(state, existing, true);
     const crew = asset.layer === 'facility' ? cls.crew : crewForLayer(asset.layer);
-    const order = newOrder(state, 'repair', asset, crew, cls, inc.id, priorityFor(inc.severity));
+    const terms = defaultTerms(state, 'repair', asset, cls);
+    const order = newOrder(state, 'repair', asset, crew, terms, inc.id, priorityFor(inc.severity));
     inc.orderId = order.id;
     if (crewCount(state, crew) === 0) emit({ type: 'noCrew', crew });
+    if (order.closure !== 'none') {
+      createPermit(state, 'emergency', [order], state.minute, false, order.closure, emit);
+    }
   }
   const w = state.world;
   emit({
@@ -292,17 +349,26 @@ export function cancelOrder(state: SimState, o: WorkOrder, refund: boolean): voi
   const crew = state.crews.find((c) => c.id === o.crewId);
   if (crew) returnCrew(state, crew);
   state.workOrders = state.workOrders.filter((x) => x.id !== o.id);
+  detachOrder(state, o);
   const inc = o.incidentId ? incidentById(state, o.incidentId) : undefined;
   if (inc && inc.orderId === o.id) inc.orderId = 0;
   state.cache.faults.orderAt.delete(assetKey(o.asset));
 }
 
-/** Raise a planned maintenance order (the caller charges its cost). */
-export function raiseMaintenance(state: SimState, ref: AssetRef): WorkOrder | undefined {
+/**
+ * Raise a planned maintenance order (the caller charges its cost and books
+ * any permit: see roadworks.ts `planBooking`).
+ */
+export function raiseMaintenance(
+  state: SimState,
+  ref: AssetRef,
+  terms?: OrderTerms,
+): WorkOrder | undefined {
   const cls = classOf(state, ref);
   if (!cls || orderOnAsset(state, ref)) return undefined;
   const crew = ref.layer === 'facility' ? cls.crew : crewForLayer(ref.layer);
-  const o = newOrder(state, 'maintenance', ref, crew, cls, 0, 4);
+  const t = terms ?? defaultTerms(state, 'maintenance', ref, cls);
+  const o = newOrder(state, 'maintenance', ref, crew, t, 0, 4);
   state.cache.faults.orderAt.set(assetKey(ref), o.id);
   return o;
 }
@@ -396,9 +462,11 @@ function completeOrder(state: SimState, o: WorkOrder, emit: Emit): void {
   if (o.asset.layer === 'main' && w.road[o.asset.id] !== 0) {
     const road: AssetRef = { layer: 'road', id: o.asset.id };
     setCondition(state, road, conditionOf(state, road) - ASSETS.excavationRoadWear);
+    recordDig(state, o);
   }
   const crew = state.crews.find((c) => c.id === o.crewId);
   state.workOrders = state.workOrders.filter((x) => x.id !== o.id);
+  detachOrder(state, o);
   if (crew) returnCrew(state, crew);
 }
 
@@ -410,6 +478,7 @@ function assignCrews(state: SimState): boolean {
   queued.sort((a, b) => a.priority - b.priority || a.id - b.id);
   const w = state.world;
   for (const o of queued) {
+    if (!permitAllows(state, o)) continue;
     const free = availableCrews(state, o.crew);
     if (free.length === 0) continue;
     const ox = o.tile % w.width;
@@ -572,6 +641,7 @@ export function tickIncidents(state: SimState, emit: Emit): boolean {
       if (o) {
         o.status = 'onSite';
         o.startedMinute = now;
+        o.workMinutes = onSiteMinutes(state, o);
         faults = true;
         if (affectsPower(state, o.asset)) power = true;
       } else returnCrew(state, c);
@@ -593,6 +663,7 @@ export function tickIncidents(state: SimState, emit: Emit): boolean {
   }
   if (assignCrews(state)) changed = true;
   if (trackOverflow(state, emit)) changed = true;
+  if (state.permits.length > 0 && checkOverruns(state, emit)) changed = true;
   if (faults) faultsChanged(state, power);
   if (state.tick % IMPACT_INTERVAL === IMPACT_OFFSET) {
     updateImpacts(state, emit);

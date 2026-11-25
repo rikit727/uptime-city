@@ -179,7 +179,9 @@ describe('burst → incident → work order → crew → repair', () => {
     // Crew arrives and isolates the burst: the leak stops.
     runUntil(sim, () => order.status === 'onSite');
     expect(s.cache.faults.tile[tile]! & FAULT.MAIN_OFF).toBeTruthy();
-    expect(s.cache.faults.tile[tile]! & FAULT.ROAD_CLOSED).toBeTruthy();
+    // An avenue keeps one lane open for emergency repairs (roads.json repairClosure).
+    expect(s.cache.faults.tile[tile]! & FAULT.LANE_CLOSED).toBeTruthy();
+    expect(s.permits.find((p) => p.orders.includes(order.id))?.kind).toBe('emergency');
     sim.step(10);
     expect(s.cache.waterStats.leakageLps).toBe(0);
     // Repair finishes: incident resolved, cost paid, condition restored.

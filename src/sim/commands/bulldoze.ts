@@ -9,6 +9,7 @@ import { depotDefOf } from '../crews';
 import { rebuildFaults, removeDepotCrews, retireAsset } from '../incidents';
 import { TILE_ASSET_LAYERS } from '../types';
 import { assetCodeLayer } from '../world';
+import { rebuildTraffic } from '../traffic';
 import { rebuildWater } from '../water';
 import { buildingsOnTiles } from '../buildings';
 import { demolishCost, finalisePlan, indicesInBounds, isValidCoord, rejected } from './common';
@@ -47,7 +48,7 @@ export function planBulldoze(state: SimState, cmd: BulldozeCommand): CommandPlan
     affected,
     [],
     cost,
-    ['road', 'zone', 'building', 'power', 'water', 'assets'],
+    ['road', 'zone', 'building', 'power', 'water', 'assets', 'traffic'],
     'Nothing to clear here.',
     demolish,
   );
@@ -74,6 +75,7 @@ export function applyBulldoze(state: SimState, _cmd: BulldozeCommand, plan: Comm
     w.power[i] = 0;
     w.water[i] = 0;
     w.pressure[i] = 0;
+    w.traffic[i] = 0;
     w.zone[i] = 0;
     w.density[i] = 0;
   }
@@ -81,4 +83,5 @@ export function applyBulldoze(state: SimState, _cmd: BulldozeCommand, plan: Comm
   rebuildFaults(state);
   rebuildNetwork(state);
   rebuildWater(state);
+  rebuildTraffic(state);
 }

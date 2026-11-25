@@ -1,8 +1,8 @@
 /**
  * Crews and depots: crews are created with their depot and removed with it.
  * A crew sets off after mobilising (from the depot) or straight away (when
- * diverted on the road), drives along its planned route, works on site and
- * drives back. Work orders and their lifecycle live in incidents.ts.
+ * diverted on the road), drives along its planned route (slowed by the
+ * congestion at the moment it sets out), works on site and drives back. Work orders and their lifecycle live in incidents.ts.
  */
 import { ASSETS, buildingDef } from './data';
 import type { DepotDef } from './data';
@@ -73,7 +73,7 @@ export function crewPosition(
  */
 export function sendCrew(state: SimState, c: Crew, to: number): void {
   const from = crewPosition(state, c).tile;
-  const route = planRoute(state.world, from, to);
+  const route = planRoute(state.world, from, to, state.cache.traffic.crewSlow);
   const mobilise = c.status === 'idle' ? ASSETS.crews.mobiliseMinutes : 0;
   c.path = route.path;
   c.departMinute = state.minute + mobilise;

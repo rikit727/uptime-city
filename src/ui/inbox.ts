@@ -1,8 +1,9 @@
 /**
  * The incident inbox: open incidents with their work orders, planned work, the
- * crews and the headline service figures (MTTR, customer-minutes, SLA). The
- * player can re-prioritise work, send a particular crew, cancel planned work,
- * send bottled water and jump the camera to a site. Reads the snapshot; acts
+ * roadworks and permit calendar, the crews and the headline service figures
+ * (MTTR, customer-minutes, SLA). The player can re-prioritise work, send a
+ * particular crew, cancel planned work, send bottled water, combine clashing
+ * street works and jump the camera to a site. Reads the snapshot; acts
  * only through the callbacks it is given.
  */
 import {
@@ -12,9 +13,11 @@ import {
   isOpen,
   isWaterIncident,
   mttrMinutes,
+  roadClassByCode,
   severityName,
+  slotLabel,
 } from '../sim';
-import type { Command, Crew, CrewType, Incident, SimSnapshot, WorkOrder } from '../sim';
+import type { Command, Crew, CrewType, Incident, Permit, SimSnapshot, WorkOrder } from '../sim';
 import { clear, h } from './dom';
 import { formatInt, formatMoney } from './format';
 
@@ -47,6 +50,19 @@ export function formatDuration(minutes: number): string {
 
 export const crewLabel = (c: Crew): string => `${CREW_NAMES[c.type]} crew ${c.id}`;
 
+/** "Resurfacing", "Burst water main repair", "Main renewal". */
+function workName(snap: SimSnapshot, o: WorkOrder): string {
+  if (o.type === 'repair') {
+    const inc = snap.incidents.find((i) => i.id === o.incidentId);
+    return inc ? `${inc.title} repair` : 'Repair';
+  }
+  return o.asset.layer === 'road'
+    ? 'Resurfacing'
+    : o.asset.layer === 'main'
+      ? 'Main renewal'
+      : 'Maintenance';
+}
+
 const place = (snap: SimSnapshot, tile: number): string =>
   `${tile % snap.world.width}, ${Math.floor(tile / snap.world.width)}`;
 
@@ -71,7 +87,8 @@ export class Inbox {
     const active = document.activeElement;
     if (active && this.el.contains(active) && active.tagName === 'SELECT') return;
     const orders = snap.workOrders.map((o) => `${o.id}${o.status}${o.priority}${o.crewId}`).join();
-    const key = `${Math.floor(snap.minute / 5)}:${snap.assets.nextIncidentId}:${orders}:${snap.cash}`;
+    const permits = snap.permits.map((p) => `${p.id}:${p.orders.length}:${p.end}`).join();
+    const key = `${Math.floor(snap.minute / 5)}:${snap.assets.nextIncidentId}:${orders}:${permits}:${snap.cash}`;
     if (key === this.key) return;
     this.key = key;
     this.render(snap);
@@ -108,6 +125,9 @@ export class Inbox {
     if (planned.length > 40)
       list.append(h('p', { class: 'muted' }, `…and ${planned.length - 40} more`));
     el.append(list);
+
+    el.append(h('h4', {}, `Roadworks and permits (${snap.permits.length})`));
+    el.append(this.roadworks(snap));
 
     el.append(h('h4', {}, 'Crews'));
     el.append(this.crewList(snap));
@@ -299,6 +319,94 @@ export class Inbox {
       ),
       this.orderControls(snap, o),
     );
+  }
+
+  /** The permit calendar: every booked or active street works slot, soonest first. */
+  private roadworks(snap: SimSnapshot): HTMLElement {
+    const box = h('div', { class: 'permits' });
+    const k = snap.traffic.kpi;
+    box.append(
+      h(
+        'div',
+        { class: 'muted' },
+        `${k.combined} works combined (${formatMoney(k.combinedSavings)} saved) · ${k.clashes} clashes · ${k.overruns} overruns · ${k.nightWorks} night jobs`,
+      ),
+    );
+    if (snap.permits.length === 0) {
+      box.append(
+        h(
+          'p',
+          { class: 'muted' },
+          'No street works. Works on roads (resurfacing, mains under roads) book a permit for their street.',
+        ),
+      );
+      return box;
+    }
+    const sorted = [...snap.permits].sort((a, b) => a.start - b.start || a.id - b.id);
+    for (const p of sorted) box.append(this.permitCard(snap, p));
+    return box;
+  }
+
+  private permitCard(snap: SimSnapshot, p: Permit): HTMLElement {
+    const w = snap.world;
+    const first = p.tiles[0] ?? 0;
+    const roadName = roadClassByCode(w.road[first] ?? 0)?.name ?? 'Road';
+    const active = p.start <= snap.minute;
+    const clashes = snap.trafficCache.clashes.get(p.id) ?? [];
+    const orders = p.orders
+      .map((id) => snap.workOrders.find((o) => o.id === id))
+      .filter((o): o is WorkOrder => !!o);
+    const what = orders.map((o) => workName(snap, o));
+    const unique = [...new Set(what)];
+    const go = h('button', { class: 'small', title: 'Show on the map' }, 'Go to');
+    go.addEventListener('click', () => this.actions.focusTile(first));
+    const flags = h('div', { class: 'flags' });
+    const flag = (text: string, bad = false) =>
+      flags.append(h('span', { class: `flag${bad ? ' bad' : ''}` }, text));
+    flag(p.kind === 'emergency' ? 'Emergency' : 'Planned');
+    flag(p.closure === 'full' ? 'Road closed' : 'Lane closed');
+    if (p.night) flag('Night works');
+    if (p.combined) flag('Combined');
+    if (p.overrun) flag('Overrunning', true);
+    if (clashes.length > 0) flag('Clash', true);
+    const card = h(
+      'div',
+      { class: `permit${active ? ' active' : ''}${clashes.length > 0 ? ' clash' : ''}` },
+      h(
+        'div',
+        { class: 'incident-title' },
+        h('strong', {}, `Permit ${p.id}: ${roadName.toLowerCase()} at ${place(snap, first)}`),
+        go,
+      ),
+      h(
+        'div',
+        { class: 'muted' },
+        `${active ? 'Since' : 'From'} ${slotLabel(snap.minute, p.start)} to ${slotLabel(snap.minute, p.end)} · ${p.tiles.length} tile${p.tiles.length === 1 ? '' : 's'}`,
+      ),
+      flags,
+      h('div', {}, unique.length > 0 ? unique.join(', ') : 'Works'),
+    );
+    // The button sits on the permit that moves: planned works join an
+    // emergency dig; otherwise the later booking joins the earlier one.
+    for (const other of clashes) {
+      const o = snap.permits.find((x) => x.id === other);
+      if (!o) continue;
+      const moves = p.kind !== o.kind ? p.kind === 'planned' : p.id > o.id;
+      if (!moves) continue;
+      const b = h(
+        'button',
+        {
+          class: 'small primary',
+          title: 'One closure for both jobs; planned works are discounted',
+        },
+        `Combine into permit ${o.id}`,
+      );
+      b.addEventListener('click', () =>
+        this.actions.dispatch({ type: 'combinePermits', from: p.id, into: o.id }),
+      );
+      card.append(b);
+    }
+    return card;
   }
 
   private crewList(snap: SimSnapshot): HTMLElement {

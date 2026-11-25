@@ -24,10 +24,14 @@ export const CONTROL_ROWS: readonly ShortcutRow[] = [
   { keys: '9 / 0', action: 'River intake / water treatment works' },
   { keys: '- / =', action: 'Service reservoir / water tower' },
   { keys: 'C / Y', action: 'Booster pumping station / sewage treatment works' },
-  { keys: 'O', action: 'Toggle the water pressure overlay' },
-  { keys: ';', action: 'Plan maintenance (drag an area; [ / ] sets the condition threshold)' },
+  { keys: 'O', action: 'Cycle the overlays: water pressure, traffic, none' },
+  {
+    keys: ';',
+    action:
+      'Plan maintenance (drag an area; [ / ] sets the condition threshold; night works, lane closure and combining below the toolbar)',
+  },
   { keys: 'Shift+1 / 2 / 3', action: 'Highways / water / electricity depot' },
-  { keys: '`', action: 'Incident inbox: incidents, work orders and crews' },
+  { keys: '`', action: 'Incident inbox: incidents, work orders, roadworks permits and crews' },
   { keys: 'B', action: 'Bulldoze' },
   { keys: 'Esc', action: 'Cancel drag, close panel, or back to Inspect' },
   { keys: 'Space', action: 'Pause / resume' },

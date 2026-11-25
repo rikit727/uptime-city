@@ -20,6 +20,9 @@ import type {
   FaultCache,
   Incident,
   GameRules,
+  Permit,
+  TrafficCache,
+  TrafficState,
   PowerNetwork,
   PowerStats,
   WaterLayout,
@@ -75,6 +78,10 @@ export interface SimSnapshot {
   readonly workOrders: readonly WorkOrder[];
   readonly crews: readonly Crew[];
   readonly faults: Readonly<FaultCache>;
+  /** Traffic round state and figures, street works permits, derived travel times and clashes. */
+  readonly traffic: Readonly<TrafficState>;
+  readonly permits: readonly Permit[];
+  readonly trafficCache: Readonly<TrafficCache>;
 }
 
 export class Simulation {
@@ -87,6 +94,7 @@ export class Simulation {
     supply: 0,
     water: 0,
     assets: 0,
+    traffic: 0,
   };
   readonly commandLog: LoggedCommand[] = [];
   private events: SimEvent[] = [];
@@ -115,9 +123,10 @@ export class Simulation {
       for (const layer of plan.layers) this.revisions[layer]++;
       this.events.push({ type: 'commandApplied', command: command.type, cost: plan.cost });
     }
-    return plan.reason === undefined
-      ? { ok: plan.ok, cost: plan.cost }
-      : { ok: plan.ok, cost: plan.cost, reason: plan.reason };
+    const result: CommandResult = { ok: plan.ok, cost: plan.cost };
+    if (plan.reason !== undefined) result.reason = plan.reason;
+    if (plan.ok && plan.note !== undefined) result.note = plan.note;
+    return result;
   }
 
   /** What a command would do, without doing it. */
@@ -170,6 +179,9 @@ export class Simulation {
       workOrders: s.workOrders,
       crews: s.crews,
       faults: s.cache.faults,
+      traffic: s.traffic,
+      permits: s.permits,
+      trafficCache: s.cache.traffic,
     };
   }
 

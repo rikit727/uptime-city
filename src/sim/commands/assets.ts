@@ -1,7 +1,8 @@
 /**
- * Asset and incident commands: raise planned maintenance over an area, change
- * a work order's priority, assign or cancel crews' work, and send bottled
- * water to priority customers.
+ * Asset and incident commands: raise planned maintenance over an area (booking
+ * street works permits for work on roads), change a work order's priority,
+ * assign or cancel crews' work, send bottled water to priority customers and
+ * combine works on the same street.
  */
 import { classOf, conditionOf } from '../assets';
 import { ASSETS } from '../data';
@@ -16,20 +17,38 @@ import {
   rebuildFaults,
   sendBottledWater,
 } from '../incidents';
-import type { AssetRef, SimState } from '../state';
+import {
+  applyCombine,
+  bookingNote,
+  createPermit,
+  joinPermit,
+  permitAllows,
+  permitById,
+  planBooking,
+  planCombine,
+  slotLabel,
+} from '../roadworks';
+import type { BookingOptions } from '../roadworks';
+import type { AssetRef, SimState, WorkOrder } from '../state';
 import { TILE_ASSET_LAYERS } from '../types';
 import { assetCodeLayer } from '../world';
 import { indicesInBounds, isValidCoord, rejected } from './common';
 import type {
   AssignCrewCommand,
   CancelOrderCommand,
+  CombinePermitsCommand,
   CommandPlan,
   RaiseMaintenanceCommand,
   SendBottledWaterCommand,
   SetOrderPriorityCommand,
 } from './types';
 
-function okPlan(state: SimState, cost: number, affected: number[] = []): CommandPlan {
+function okPlan(
+  state: SimState,
+  cost: number,
+  affected: number[] = [],
+  layers: CommandPlan['layers'] = ['assets'],
+): CommandPlan {
   if (cost > state.cash) {
     return {
       ...rejected(`Not enough cash: this costs £${cost.toLocaleString('en-GB')}.`),
@@ -37,8 +56,14 @@ function okPlan(state: SimState, cost: number, affected: number[] = []): Command
       affected,
     };
   }
-  return { ok: true, cost, affected, blocked: [], demolish: [], removed: [], layers: ['assets'] };
+  return { ok: true, cost, affected, blocked: [], demolish: [], removed: [], layers };
 }
+
+const bookingOptions = (cmd: RaiseMaintenanceCommand): BookingOptions => ({
+  night: cmd.night === true,
+  closure: cmd.closure === 'lane' ? 'lane' : 'full',
+  combine: cmd.combine !== false,
+});
 
 /** Assets a maintenance command would cover, in a fixed order (tiles, then facilities by id). */
 export function maintenanceTargets(state: SimState, cmd: RaiseMaintenanceCommand): AssetRef[] {
@@ -78,25 +103,46 @@ export function planRaiseMaintenance(state: SimState, cmd: RaiseMaintenanceComma
   if (targets.length === 0) {
     return rejected('Nothing here needs maintenance at that threshold (or it is already booked).');
   }
-  let cost = 0;
+  const opts = bookingOptions(cmd);
+  const booking = planBooking(state, targets, opts);
   const tiles = new Set<number>();
   const w = state.world;
   for (const ref of targets) {
-    cost += classOf(state, ref)!.maintenance.cost;
     if (ref.layer === 'facility') {
       const b = state.cache.byId.get(ref.id)!;
       tiles.add(b.y * w.width + b.x);
     } else tiles.add(ref.id);
   }
-  return okPlan(
+  const plan = okPlan(
     state,
-    cost,
+    booking.cost,
     [...tiles].sort((a, b) => a - b),
+    ['assets', 'traffic'],
   );
+  const note = bookingNote(booking, opts);
+  return plan.ok && note ? { ...plan, note } : plan;
 }
 
 export function applyRaiseMaintenance(state: SimState, cmd: RaiseMaintenanceCommand): void {
-  for (const ref of maintenanceTargets(state, cmd)) raiseMaintenance(state, ref);
+  const opts = bookingOptions(cmd);
+  const booking = planBooking(state, maintenanceTargets(state, cmd), opts);
+  const orders: (WorkOrder | undefined)[] = booking.specs.map((s) =>
+    raiseMaintenance(state, s.ref, {
+      minutes: s.minutes,
+      cost: s.cost,
+      closure: s.closure,
+      night: s.night,
+      combined: s.combined,
+    }),
+  );
+  for (const g of booking.groups) {
+    const list = g.specs.map((k) => orders[k]).filter((o): o is WorkOrder => !!o);
+    if (list.length === 0) continue;
+    const target = g.join ? permitById(state, g.join) : undefined;
+    if (target) joinPermit(state, target, list);
+    else createPermit(state, 'planned', list, booking.start, opts.night, opts.closure);
+  }
+  state.traffic.kpi.combinedSavings += booking.saved;
   rebuildFaults(state);
 }
 
@@ -124,6 +170,14 @@ export function planAssignCrew(state: SimState, cmd: AssignCrewCommand): Command
   if (crew.type !== o.crew) return rejected('That crew cannot do this kind of work.');
   if (o.status === 'onSite') return rejected('A crew is already working on this.');
   if (crew.status === 'onSite') return rejected('That crew is busy on site.');
+  if (!permitAllows(state, o)) {
+    const p = permitById(state, o.permitId);
+    return rejected(
+      p && state.minute < p.start
+        ? `The street works permit starts ${slotLabel(state.minute, p.start).toLowerCase()}.`
+        : 'This waits for the main works on the same spot to finish.',
+    );
+  }
   return okPlan(state, 0);
 }
 
@@ -160,4 +214,19 @@ export function applySendBottledWater(state: SimState, cmd: SendBottledWaterComm
     state,
     state.incidents.find((i) => i.id === cmd.incident)!,
   );
+}
+
+export function planCombinePermits(state: SimState, cmd: CombinePermitsCommand): CommandPlan {
+  const c = planCombine(state, cmd.from, cmd.into);
+  if (!c.ok) return rejected(c.reason ?? 'Those works cannot be combined.');
+  const into = permitById(state, cmd.into)!;
+  const plan = okPlan(state, -c.refund, [...into.tiles], ['assets', 'traffic']);
+  return c.refund > 0
+    ? { ...plan, note: `Works combined: £${c.refund.toLocaleString('en-GB')} refunded.` }
+    : { ...plan, note: 'Works combined under one permit.' };
+}
+
+export function applyCombinePermits(state: SimState, cmd: CombinePermitsCommand): void {
+  applyCombine(state, cmd.from, cmd.into);
+  rebuildFaults(state);
 }

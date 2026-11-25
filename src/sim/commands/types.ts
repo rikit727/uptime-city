@@ -71,6 +71,19 @@ export interface RaiseMaintenanceCommand {
   crew?: CrewType;
   /** Limit to a single asset on the tile (road, main, line or the facility there). */
   only?: 'road' | 'main' | 'line' | 'facility';
+  /** Works on roads (resurfacing, mains under roads): book the permit for tonight (night works). */
+  night?: boolean;
+  /** Close one lane instead of the whole road (slower work, traffic keeps moving). Default full. */
+  closure?: 'full' | 'lane';
+  /** Join works already booked on the same street instead of booking a second slot. Default true. */
+  combine?: boolean;
+}
+
+/** Move the works of one permit into another on the same street (dig once; planned works are discounted). */
+export interface CombinePermitsCommand {
+  type: 'combinePermits';
+  from: number;
+  into: number;
 }
 
 /** Change a work order's priority (1 emergency .. 4 routine). */
@@ -110,17 +123,19 @@ export type Command =
   | SetOrderPriorityCommand
   | AssignCrewCommand
   | CancelOrderCommand
-  | SendBottledWaterCommand;
+  | SendBottledWaterCommand
+  | CombinePermitsCommand;
 export type CommandType = Command['type'];
 
 /**
  * Which state layers changed, so renderers know what to rebuild. `building`:
  * buildings added or removed; `power`: lines or facilities; `supply`: which
  * buildings have power (lights at night); `water`: mains, water facilities or
- * pressures; `assets`: incidents, work orders, crews or asset condition.
+ * pressures; `assets`: incidents, work orders, crews or asset condition; `traffic`: flows,
+ * closures or permits.
  */
 export type Layer =
-  'terrain' | 'road' | 'zone' | 'building' | 'power' | 'supply' | 'water' | 'assets';
+  'terrain' | 'road' | 'zone' | 'building' | 'power' | 'supply' | 'water' | 'assets' | 'traffic';
 
 /**
  * The outcome of planning a command against the current state, without changing it.
@@ -130,6 +145,8 @@ export interface CommandPlan {
   ok: boolean;
   /** Player-facing reason when `ok` is false (British English). */
   reason?: string;
+  /** Extra information for the player when `ok` is true (e.g. permit clashes, combined works). */
+  note?: string;
   /** Total cost in pounds. */
   cost: number;
   /** Tile indices that will change. */
@@ -147,5 +164,6 @@ export interface CommandPlan {
 export interface CommandResult {
   ok: boolean;
   reason?: string;
+  note?: string;
   cost: number;
 }

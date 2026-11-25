@@ -258,6 +258,68 @@ describe('migrations', () => {
     sim.step(30);
   });
 
+  it('upgrades a version 4 save (milestone 4): traffic, permits, work order closures', () => {
+    const v4 = MIGRATIONS[3]!(
+      MIGRATIONS[2]!(
+        MIGRATIONS[1]!({
+          format: SAVE_FORMAT,
+          version: 1,
+          meta: { gameName: 'x', label: 'm4', savedAt: '', day: 3, minute: 3000, cash: 5, seed: 3 },
+          state: {
+            seed: 3,
+            tick: 2640,
+            minute: 3000,
+            rngState: 1234,
+            cash: 5,
+            world: {
+              width: 128,
+              height: 128,
+              terrain: [0, 16384],
+              road: [0, 128 * 20, 2, 30, 0, 16384 - 128 * 20 - 30],
+              zone: [0, 16384],
+              density: [0, 16384],
+            },
+          },
+        }),
+      ),
+    );
+    const order = (layer: string, id: number, n: number) => ({
+      id: n,
+      type: 'maintenance',
+      crew: layer === 'road' ? 'roads' : 'water',
+      asset: { layer, id },
+      tile: id,
+      incidentId: 0,
+      priority: 4,
+      manualPriority: false,
+      status: 'queued',
+      createdMinute: 3000,
+      workMinutes: 300,
+      cost: 100,
+      prepaid: true,
+      crewId: 0,
+      startedMinute: -1,
+    });
+    const st = v4.state as { workOrders: unknown[]; world: { water: number[] } };
+    st.workOrders = [
+      order('road', 128 * 20 + 3, 1),
+      order('main', 128 * 20 + 4, 2),
+      order('main', 5, 3),
+    ];
+    st.world.water = [1, 6, 0, 128 * 20 - 6, 1, 30, 0, 16384 - 128 * 20 - 30];
+    const save = parseSaveFile(JSON.stringify(v4));
+    expect(save.version).toBe(CURRENT_SAVE_VERSION);
+    const sim = simulationFromSave(save);
+    const s = sim.state;
+    expect(s.workOrders.map((o) => o.closure)).toEqual(['full', 'full', 'none']);
+    expect(s.workOrders.every((o) => o.permitId === 0 && !o.night)).toBe(true);
+    expect(s.permits).toEqual([]);
+    expect(s.traffic.cursor).toBe(-1);
+    expect(s.world.traffic.every((v) => v === 0)).toBe(true);
+    expect(s.cache.traffic.segmentAt[128 * 20 + 5]).toBeGreaterThan(0);
+    sim.step(60);
+  });
+
   it('runs each step in order up to the target version', () => {
     const migrations = {
       1: (s: { version: number }) => ({ ...s, version: 2, a: 1 }),

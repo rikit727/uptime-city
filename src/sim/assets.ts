@@ -27,6 +27,8 @@ export const FAULT = {
   MAIN_OFF: 4,
   /** Line tile out of the power network. */
   LINE_OFF: 8,
+  /** One lane closed for works: the road stays open at reduced capacity. */
+  LANE_CLOSED: 16,
 } as const;
 
 export const assetKey = (ref: AssetRef): string => `${ref.layer}:${ref.id}`;

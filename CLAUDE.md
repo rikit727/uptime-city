@@ -53,9 +53,14 @@ Before committing: `npm run lint && npm test && npm run build`.
   by `rebuildCache()`. It must be a pure function of saved state. Commands
   that change zoning, lines or facilities call `rebuildEstates()` /
   `rebuildNetwork()`; commands that change roads, mains or water facilities
-  call `rebuildWater()`; anything that opens, closes or moves incidents and work
-  orders on site calls `rebuildFaults()`; use `addBuilding()` /
-  `removeBuildings()` so the tile index stays in step.
+  call `rebuildWater()`; commands that change roads also call `rebuildTraffic()`
+  (segments, travel times, clashes); anything that opens, closes or moves incidents
+  and work orders on site calls `rebuildFaults()` (which refreshes travel times);
+  use `addBuilding()` / `removeBuildings()` so the tile index stays in step.
+- **Sliced work:** a system that spreads work across ticks must save everything a
+  later slice reads (cursor, inputs fixed at the round's start, partial results),
+  as `water.cursor` and `traffic.table` / `traffic.pending` do, so a save made
+  mid-round continues identically.
 - **Imports:** in `src/` outside the sim, import sim things from `src/sim` (the index),
   not deep paths (tests may import deep paths). Use `import type` for types (lint enforces).
 - **Style:** Prettier (single quotes, 100 cols). Strict TS with
@@ -72,7 +77,10 @@ Before committing: `npm run lint && npm test && npm run build`.
 ### A road class or zone type parameter
 
 Edit `src/data/roads.json` or `src/data/zones.json`. Add a new entry with a
-new unique `code`. Road class and zone type _ids_ are also TypeScript unions
+new unique `code`. Road classes need `capacityVehPerHour` (two-way PCU/h per tile),
+`speedKmh`, `laneClosureCapacity` (share of capacity left with a lane closed) and
+`repairClosure` (`full` or `lane` for emergency repairs), plus `tileClasses`
+entries in `assets.json`. Road class and zone type _ids_ are also TypeScript unions
 in `src/sim/types.ts` (`RoadClassId`, `ZoneId`); add the id there and a tool
 entry in `src/ui/tools.ts`.
 
@@ -185,6 +193,18 @@ or lines; facilities get condition 100 from `addBuilding()`. Commands that
 change incidents or work orders call `rebuildFaults()` (and `rebuildNetwork()`
 if a line or power facility is affected).
 
+### Traffic and roadworks tuning
+
+Everything is in `src/data/traffic.json`: cell size, assignment interval and
+per-tick search budget (`nodesPerTick`), blend, BPR `alpha`/`beta`, gravity
+deterrence, trip rates per purpose (outbound, return, freight, farm), PCU factors,
+hourly curves (relative weights; normalised in `data.ts`), the commute growth
+factor, the crew congestion cap, roadworks factors (night hours, cost and
+duration; lane closure duration; combine discount and resurfacing factor; permit
+allowance), cosmetic car density and the overlay ramp. A new trip purpose needs
+the id in `TRIP_PURPOSES` (`data.ts`), a curve, and its production and attraction
+in `buildCellTable` (`traffic.ts`).
+
 ### A scenario (from milestone 7)
 
 Not implemented yet. Planned: one JSON file per scenario in
@@ -205,6 +225,10 @@ section in milestone 7.
 - Water: `uptimeCity.debugSim.state.cache.waterStats` (city figures),
   `.state.world.pressure` (per-tile head), `.state.cache.water` (networks,
   zones, sewers). Press O for the pressure overlay.
+- Traffic: `.state.world.traffic[tile]` (PCU/h), `.state.traffic` (round cursor,
+  trip table, figures, roadworks KPIs), `.state.permits`,
+  `.state.cache.traffic` (travel times, capacities, segments, clashes). O cycles
+  the water and traffic overlays.
 - Tests on a fixed map: `tests/sim/helpers.ts` has `poweredTown()` (which adds
   `waterSupply()` unless told not to) and `riverWater()`; on generated maps use
   `waterSupplyCommands()`. To test a failure, call `openIncident()` directly

@@ -7,7 +7,8 @@
  * It is never saved; `rebuildCache()` recreates it after load, so it must be a
  * pure function of the saved state.
  */
-import { GAME } from './data';
+import { GAME, TRAFFIC, TRIP_PURPOSES } from './data';
+import type { TripPurpose } from './data';
 import { generateTerrain } from './mapgen';
 import { Rng, seedState } from './rng';
 import type { AssetLayer, CrewType, IncidentKind, WeatherEventId, ZoneId } from './types';
@@ -99,13 +100,116 @@ export interface WorkOrder {
   manualPriority: boolean;
   status: WorkOrderStatus;
   readonly createdMinute: number;
-  readonly workMinutes: number;
-  /** Cost in pounds: planned work is paid when raised, repairs when finished. */
-  readonly cost: number;
+  /** Minutes of work on site (shorter when combined with other works on the same street). */
+  workMinutes: number;
+  /** Cost in pounds: planned work is paid when raised, repairs when finished. Combining discounts it. */
+  cost: number;
   readonly prepaid: boolean;
   crewId: number;
   /** Minute the crew started work on site (-1 before). */
   startedMinute: number;
+  /** How the road is closed while the crew is on site ('none' off the road or for overhead lines). */
+  readonly closure: RoadClosure;
+  /** Night works: the permit slot starts in the evening; slower and dearer, but little traffic. */
+  readonly night: boolean;
+  /** Street works permit (0 = none needed). The crew is not sent before the permit's slot starts. */
+  permitId: number;
+  /** Booked together with other works on the same street (discounted). */
+  combined: boolean;
+}
+
+export type RoadClosure = 'none' | 'lane' | 'full';
+
+/**
+ * A street works permit: a booked slot for works on one road segment (a run of
+ * road between junctions). Emergency repairs get one at once; planned works are
+ * booked now or for tonight. Permits on the same segment whose slots overlap
+ * clash (flagged; derived in the cache) unless their works are combined into one.
+ */
+export interface Permit {
+  readonly id: number;
+  readonly kind: 'planned' | 'emergency';
+  /** Road tiles of the works, ascending. */
+  tiles: number[];
+  /** Minute the slot starts and the booked end. */
+  start: number;
+  end: number;
+  readonly night: boolean;
+  readonly closure: 'lane' | 'full';
+  /** Work orders under this permit, ascending id. The permit ends when they are all done. */
+  orders: number[];
+  /** Works have run past the booked end (counted once). */
+  overrun: boolean;
+  /** Other works were combined into this permit. */
+  combined: boolean;
+  /** Road tiles already dug up under this permit (main works done): resurfacing there is quicker. */
+  dug: number[];
+}
+
+/** Roadworks figures (saved). */
+export interface RoadworksKpis {
+  permits: number;
+  clashes: number;
+  combined: number;
+  /** Pounds saved by combining works. */
+  combinedSavings: number;
+  overruns: number;
+  nightWorks: number;
+}
+
+/**
+ * Trips per hour produced and attracted by each traffic cell, fixed at the
+ * start of an assignment round (values rounded to 0.01 so saves are exact).
+ */
+export interface TripTable {
+  /** Cell -> road tile its trips load onto (-1 = nothing there). */
+  load: Int32Array;
+  prod: Record<TripPurpose, Float64Array>;
+  attr: Record<TripPurpose, Float64Array>;
+}
+
+/**
+ * Saved traffic state: the assignment round in progress (cursor, trip table,
+ * flows accumulated so far), per-cell commute times and the last round's figures.
+ */
+export interface TrafficState {
+  /** Next traffic cell of the current assignment round; -1 between rounds. */
+  cursor: number;
+  /** This round's trips (valid while `cursor >= 0`). */
+  table: TripTable;
+  /** Flows assigned so far this round, per tile, in 1/16 PCU/h. */
+  pending: Uint32Array;
+  /** Mean trip time from each cell's homes, minutes ×10 (0 = unknown). */
+  commute: Uint16Array;
+  roundTrips: number;
+  roundTripMinutes: number;
+  roundFreeMinutes: number;
+  roundUnserved: number;
+  /** Last round: trips per hour, mean trip time, congested / free-flow time, trips with no route. */
+  tripsPerHour: number;
+  avgTripMinutes: number;
+  congestion: number;
+  unservedPerHour: number;
+  nextPermitId: number;
+  kpi: RoadworksKpis;
+}
+
+/** Derived traffic data (never saved). */
+export interface TrafficCache {
+  /** Seconds to cross each road tile now (BPR with closures; Infinity = closed or no road). */
+  timeSec: Float32Array;
+  /** Free-flow seconds per road tile (0 = no road). */
+  freeSec: Float32Array;
+  /** Effective capacity per tile, PCU/h (lane closures reduce it; 0 = closed). */
+  capacity: Float32Array;
+  /** Crew travel-time multiplier per road tile (congestion, capped; crews pass closures). */
+  crewSlow: Float32Array;
+  /** Road segment id per road tile (0 = no road). Junctions are their own segments. */
+  segmentAt: Int32Array;
+  /** Permit id -> ids of permits it clashes with. */
+  clashes: Map<number, number[]>;
+  /** Building id -> road tile it loads its traffic onto (-1 = none). Cleared when roads change. */
+  access: Map<number, number>;
 }
 
 export type CrewStatus = 'idle' | 'enRoute' | 'onSite' | 'returning';
@@ -336,6 +440,7 @@ export interface SimCache {
   /** Per-network figures gathered during the current solve round (UI only). */
   waterRound: WaterNetworkResult[];
   faults: FaultCache;
+  traffic: TrafficCache;
 }
 
 /** Network-level figures from one solve (for the UI). */
@@ -378,6 +483,9 @@ export interface SimState {
   workOrders: WorkOrder[];
   /** Crews, ascending id. */
   crews: Crew[];
+  traffic: TrafficState;
+  /** Street works permits, ascending id. */
+  permits: Permit[];
   /** Derived data; never saved. */
   cache: SimCache;
 }
@@ -463,6 +571,50 @@ export const initialAssetsState = (): AssetsState => ({
   kpi: emptyKpis(),
 });
 
+export const emptyRoadworksKpis = (): RoadworksKpis => ({
+  permits: 0,
+  clashes: 0,
+  combined: 0,
+  combinedSavings: 0,
+  overruns: 0,
+  nightWorks: 0,
+});
+
+/** Traffic cells along each side of the map. */
+export const trafficCellsAcross = (size: number): number => Math.ceil(size / TRAFFIC.cellSize);
+
+const perPurpose = (n: number): Record<TripPurpose, Float64Array> =>
+  Object.fromEntries(TRIP_PURPOSES.map((p) => [p, new Float64Array(n)])) as Record<
+    TripPurpose,
+    Float64Array
+  >;
+
+export const emptyTripTable = (cells: number): TripTable => ({
+  load: new Int32Array(cells).fill(-1),
+  prod: perPurpose(cells),
+  attr: perPurpose(cells),
+});
+
+export function initialTrafficState(world: { width: number; height: number }): TrafficState {
+  const cells = trafficCellsAcross(world.width) * trafficCellsAcross(world.height);
+  return {
+    cursor: -1,
+    table: emptyTripTable(cells),
+    pending: new Uint32Array(world.width * world.height),
+    commute: new Uint16Array(cells),
+    roundTrips: 0,
+    roundTripMinutes: 0,
+    roundFreeMinutes: 0,
+    roundUnserved: 0,
+    tripsPerHour: 0,
+    avgTripMinutes: 0,
+    congestion: 1,
+    unservedPerHour: 0,
+    nextPermitId: 1,
+    kpi: emptyRoadworksKpis(),
+  };
+}
+
 /** An empty cache sized for the world; call rebuildCache() to fill it. */
 export function emptyCache(world: WorldState): SimCache {
   const n = world.width * world.height;
@@ -498,6 +650,15 @@ export function emptyCache(world: WorldState): SimCache {
       offline: new Set(),
       incidentAt: new Map(),
       orderAt: new Map(),
+    },
+    traffic: {
+      timeSec: new Float32Array(n),
+      freeSec: new Float32Array(n),
+      capacity: new Float32Array(n),
+      crewSlow: new Float32Array(n).fill(1),
+      segmentAt: new Int32Array(n),
+      clashes: new Map(),
+      access: new Map(),
     },
   };
 }
@@ -545,6 +706,8 @@ export function createInitialState(opts: NewGameOptions): SimState {
     incidents: [],
     workOrders: [],
     crews: [],
+    traffic: initialTrafficState(world),
+    permits: [],
     cache: emptyCache(world),
   };
   initWeather(state);

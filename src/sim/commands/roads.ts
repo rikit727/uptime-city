@@ -5,6 +5,7 @@ import { roadPath } from '../geometry';
 import type { SimState } from '../state';
 import { layTileAsset } from '../assets';
 import { retireAsset } from '../incidents';
+import { rebuildTraffic } from '../traffic';
 import { rebuildWater } from '../water';
 import { isWater } from '../world';
 import {
@@ -57,7 +58,7 @@ export function planBuildRoad(state: SimState, cmd: BuildRoadCommand): CommandPl
     affected,
     blocked,
     cost,
-    ['road', 'zone', 'building', 'water'],
+    ['road', 'zone', 'building', 'water', 'traffic'],
     `There is already a ${def.name.toLowerCase()} here.`,
     grown,
   );
@@ -84,4 +85,5 @@ export function applyBuildRoad(state: SimState, cmd: BuildRoadCommand, plan: Com
   }
   if (rezoned) rebuildEstates(state);
   rebuildWater(state);
+  rebuildTraffic(state);
 }

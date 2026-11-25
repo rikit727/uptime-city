@@ -44,4 +44,8 @@ export type SimEvent =
       bottledWater: boolean;
     }
   | { type: 'maintenanceCompleted'; name: string; x: number; y: number }
-  | { type: 'noCrew'; crew: CrewType };
+  | { type: 'noCrew'; crew: CrewType }
+  /** A new street works permit overlaps another on the same road segment. */
+  | { type: 'permitClash'; id: number; other: number; x: number; y: number }
+  /** Works have run past their permit's booked end. */
+  | { type: 'permitOverrun'; id: number; x: number; y: number };
