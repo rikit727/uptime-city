@@ -34,6 +34,7 @@
       "residents": 4,
       "jobs": 0,
       "powerKw": 2.5,
+      "waterLpd": 560,
       "priority": 2,
       "heightJitter": 0.15,
       "parts": [
@@ -71,6 +72,7 @@
       "residents": 7,
       "jobs": 0,
       "powerKw": 4.5,
+      "waterLpd": 1000,
       "priority": 2,
       "heightJitter": 0.1,
       "parts": [
@@ -108,6 +110,7 @@
       "residents": 14,
       "jobs": 0,
       "powerKw": 9,
+      "waterLpd": 2000,
       "priority": 2,
       "heightJitter": 0.1,
       "parts": [
@@ -145,6 +148,7 @@
       "residents": 30,
       "jobs": 0,
       "powerKw": 18,
+      "waterLpd": 4200,
       "priority": 2,
       "heightJitter": 0.2,
       "parts": [
@@ -172,6 +176,7 @@
       "residents": 260,
       "jobs": 0,
       "powerKw": 150,
+      "waterLpd": 36000,
       "priority": 2,
       "heightJitter": 0.3,
       "parts": [
@@ -209,6 +214,7 @@
       "residents": 140,
       "jobs": 0,
       "powerKw": 85,
+      "waterLpd": 19600,
       "priority": 2,
       "heightJitter": 0.35,
       "parts": [
@@ -225,6 +231,53 @@
       ]
     },
     {
+      "id": "careHome",
+      "code": 7,
+      "name": "Care home",
+      "category": "Care home (priority customer)",
+      "zone": "residential",
+      "densities": ["medium"],
+      "footprint": [1, 1],
+      "weight": 0.4,
+      "residents": 40,
+      "jobs": 12,
+      "powerKw": 30,
+      "waterLpd": 7000,
+      "priority": 0,
+      "heightJitter": 0.05,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.85,
+          "d": 0.6,
+          "h": 0.34,
+          "colour": ["#efe6d6", "#e3d9c6"],
+          "windows": true
+        },
+        {
+          "shape": "gable",
+          "x": 0.5,
+          "z": 0.5,
+          "y": 0.34,
+          "w": 0.9,
+          "d": 0.65,
+          "h": 0.16,
+          "colour": ["#5d5f66", "#6e4a3a"]
+        },
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.86,
+          "w": 0.3,
+          "d": 0.12,
+          "h": 0.14,
+          "colour": "#7fa86a"
+        }
+      ]
+    },
+    {
       "id": "cornerShop",
       "code": 20,
       "name": "Corner shop",
@@ -236,6 +289,7 @@
       "residents": 0,
       "jobs": 4,
       "powerKw": 12,
+      "waterLpd": 300,
       "priority": 3,
       "heightJitter": 0.1,
       "parts": [
@@ -273,6 +327,7 @@
       "residents": 0,
       "jobs": 70,
       "powerKw": 220,
+      "waterLpd": 5000,
       "priority": 3,
       "heightJitter": 0.05,
       "parts": [
@@ -286,7 +341,15 @@
           "colour": ["#d8dde2", "#c9ced4"],
           "windows": true
         },
-        { "shape": "box", "x": 1, "z": 1.6, "w": 1.8, "d": 0.6, "h": 0.02, "colour": "#6b7178" }
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 1.6,
+          "w": 1.8,
+          "d": 0.6,
+          "h": 0.02,
+          "colour": "#6b7178"
+        }
       ]
     },
     {
@@ -301,6 +364,7 @@
       "residents": 0,
       "jobs": 14,
       "powerKw": 40,
+      "waterLpd": 900,
       "priority": 3,
       "heightJitter": 0.15,
       "parts": [
@@ -338,6 +402,7 @@
       "residents": 0,
       "jobs": 30,
       "powerKw": 90,
+      "waterLpd": 2000,
       "priority": 3,
       "heightJitter": 0.25,
       "parts": [
@@ -365,6 +430,7 @@
       "residents": 0,
       "jobs": 180,
       "powerKw": 450,
+      "waterLpd": 10000,
       "priority": 3,
       "heightJitter": 0.15,
       "parts": [
@@ -402,6 +468,7 @@
       "residents": 0,
       "jobs": 18,
       "powerKw": 35,
+      "waterLpd": 800,
       "priority": 3,
       "heightJitter": 0.1,
       "parts": [
@@ -429,6 +496,7 @@
       "residents": 0,
       "jobs": 140,
       "powerKw": 260,
+      "waterLpd": 6000,
       "priority": 3,
       "heightJitter": 0.1,
       "parts": [
@@ -452,7 +520,15 @@
           "colour": ["#d7dae3", "#b5bfd0"],
           "windows": true
         },
-        { "shape": "box", "x": 1.5, "z": 0.45, "w": 0.8, "d": 0.6, "h": 0.02, "colour": "#6b7178" }
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 0.45,
+          "w": 0.8,
+          "d": 0.6,
+          "h": 0.02,
+          "colour": "#6b7178"
+        }
       ]
     },
     {
@@ -467,6 +543,7 @@
       "residents": 0,
       "jobs": 70,
       "powerKw": 120,
+      "waterLpd": 3000,
       "priority": 3,
       "heightJitter": 0.25,
       "parts": [
@@ -494,6 +571,7 @@
       "residents": 0,
       "jobs": 260,
       "powerKw": 420,
+      "waterLpd": 10000,
       "priority": 3,
       "heightJitter": 0.4,
       "parts": [
@@ -531,6 +609,7 @@
       "residents": 0,
       "jobs": 900,
       "powerKw": 1300,
+      "waterLpd": 36000,
       "priority": 3,
       "heightJitter": 0.3,
       "parts": [
@@ -569,6 +648,7 @@
       "residents": 0,
       "jobs": 16,
       "powerKw": 60,
+      "waterLpd": 1500,
       "priority": 4,
       "heightJitter": 0.1,
       "parts": [
@@ -605,6 +685,7 @@
       "residents": 0,
       "jobs": 45,
       "powerKw": 180,
+      "waterLpd": 2500,
       "priority": 4,
       "heightJitter": 0.08,
       "parts": [
@@ -617,7 +698,15 @@
           "h": 0.5,
           "colour": ["#d2d6d9", "#bfc5c9", "#c9c1ae"]
         },
-        { "shape": "box", "x": 1, "z": 1.7, "w": 1.85, "d": 0.5, "h": 0.02, "colour": "#62686e" }
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 1.7,
+          "w": 1.85,
+          "d": 0.5,
+          "h": 0.02,
+          "colour": "#62686e"
+        }
       ]
     },
     {
@@ -632,6 +721,7 @@
       "residents": 0,
       "jobs": 90,
       "powerKw": 400,
+      "waterLpd": 15000,
       "priority": 4,
       "heightJitter": 0.1,
       "parts": [
@@ -678,6 +768,7 @@
       "residents": 0,
       "jobs": 160,
       "powerKw": 1500,
+      "waterLpd": 80000,
       "priority": 4,
       "heightJitter": 0.15,
       "parts": [
@@ -732,6 +823,7 @@
       "residents": 0,
       "jobs": 220,
       "powerKw": 700,
+      "waterLpd": 8000,
       "priority": 4,
       "heightJitter": 0.05,
       "parts": [
@@ -744,7 +836,15 @@
           "h": 0.65,
           "colour": ["#dfe2e4", "#c8ced2"]
         },
-        { "shape": "box", "x": 1.5, "z": 2.6, "w": 2.8, "d": 0.7, "h": 0.02, "colour": "#5e646a" }
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 2.6,
+          "w": 2.8,
+          "d": 0.7,
+          "h": 0.02,
+          "colour": "#5e646a"
+        }
       ]
     },
     {
@@ -759,6 +859,8 @@
       "residents": 3,
       "jobs": 4,
       "powerKw": 15,
+      "waterLpd": 800,
+      "irrigationLpd": 60000,
       "priority": 4,
       "exportPerDay": 600,
       "fields": "arable",
@@ -817,6 +919,8 @@
       "residents": 3,
       "jobs": 5,
       "powerKw": 25,
+      "waterLpd": 20000,
+      "irrigationLpd": 8000,
       "priority": 4,
       "exportPerDay": 700,
       "fields": "pasture",
@@ -884,12 +988,22 @@
       "residents": 0,
       "jobs": 12,
       "powerKw": 120,
+      "waterLpd": 1500,
+      "irrigationLpd": 40000,
       "priority": 4,
       "exportPerDay": 900,
       "fields": "glasshouse",
       "heightJitter": 0,
       "parts": [
-        { "shape": "box", "x": 0.4, "z": 0.4, "w": 0.5, "d": 0.45, "h": 0.25, "colour": "#d6d2c4" },
+        {
+          "shape": "box",
+          "x": 0.4,
+          "z": 0.4,
+          "w": 0.5,
+          "d": 0.45,
+          "h": 0.25,
+          "colour": "#d6d2c4"
+        },
         {
           "shape": "tunnel",
           "x": 1.5,

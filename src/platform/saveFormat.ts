@@ -10,7 +10,7 @@ import { Simulation, dayOf, deserializeState, serializeState } from '../sim';
 import type { SerializedState } from '../sim';
 
 export const SAVE_FORMAT = 'uptime-city-save';
-export const CURRENT_SAVE_VERSION = 2;
+export const CURRENT_SAVE_VERSION = 3;
 
 export interface SaveMeta {
   gameName: string;
@@ -70,6 +70,35 @@ export const MIGRATIONS: Record<number, (save: RawSave) => RawSave> = {
         },
         demand: { residential: 0, commercial: 0, office: 0, industrial: 0, agricultural: 0 },
         growthCursor: 0,
+      },
+    };
+  },
+  // v2 -> v3 (milestone 3): water mains (laid under existing roads), pressures,
+  // building storage and dry minutes, water state.
+  2: (save) => {
+    const state = save.state as Record<string, unknown>;
+    const world = state.world as Record<string, unknown>;
+    const tiles = Number(world.width) * Number(world.height);
+    const road = world.road as number[];
+    const water = road.map((v, k) => (k % 2 === 0 ? (v === 0 ? 0 : 1) : v));
+    return {
+      ...save,
+      version: 3,
+      state: {
+        ...state,
+        world: { ...world, water, pressure: [0, tiles] },
+        buildings: (state.buildings as unknown[][]).map((b) => [...b, 0, 0]),
+        water: {
+          cursor: -1,
+          abstractedTodayMl: 0,
+          farmAbstractedTodayMl: 0,
+          irrigationCapped: false,
+          licenceBreached: false,
+          overflowing: false,
+          spillMl: 0,
+          supplyAlert: false,
+          priorityAlert: false,
+        },
       },
     };
   },

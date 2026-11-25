@@ -6,9 +6,11 @@
 import type { SimState } from '../state';
 import { applyBulldoze, planBulldoze } from './bulldoze';
 import { rejected } from './common';
-import { applyBuildLine, applyPlaceFacility, planBuildLine, planPlaceFacility } from './power';
+import { applyPlaceFacility, planPlaceFacility } from './facilities';
+import { applyBuildLine, planBuildLine } from './power';
 import { applyBuildRoad, planBuildRoad } from './roads';
 import type { Command, CommandPlan } from './types';
+import { applyBuildMain, planBuildMain } from './water';
 import { applyZone, planZone } from './zoning';
 
 export type { Command, CommandPlan, CommandResult, CommandType, Layer } from './types';
@@ -26,6 +28,7 @@ const handlers: HandlerMap = {
   bulldoze: { plan: planBulldoze, apply: applyBulldoze },
   placeFacility: { plan: planPlaceFacility, apply: applyPlaceFacility },
   buildLine: { plan: planBuildLine, apply: applyBuildLine },
+  buildMain: { plan: planBuildMain, apply: applyBuildMain },
 };
 
 function handlerFor(cmd: Command): Handler<Command> | undefined {

@@ -59,6 +59,8 @@ export function addBuilding(
     occupancy,
     unpoweredMinutes: 0,
     storedMWh: 0,
+    storedMl: 0,
+    dryMinutes: 0,
   };
   state.buildings.push(b);
   indexBuilding(state, b);
@@ -82,6 +84,8 @@ export function removeBuildings(state: SimState, ids: readonly number[]): number
     cache.byId.delete(id);
     cache.loadKw.delete(id);
     cache.outputMW.delete(id);
+    cache.waterFlowLps.delete(id);
+    cache.waterUseLps.delete(id);
   }
   const before = state.buildings.length;
   state.buildings = state.buildings.filter((b) => !gone.has(b.id));

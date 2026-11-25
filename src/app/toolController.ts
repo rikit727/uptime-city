@@ -153,6 +153,8 @@ export class ToolController {
         return { type: 'zone', zone: this.tool.zone, density: this.density, from, to };
       case 'line':
         return { type: 'buildLine', line: this.tool.line, from, to };
+      case 'main':
+        return { type: 'buildMain', main: this.tool.main, from, to };
       case 'bulldoze':
         return { type: 'bulldoze', from, to };
       default:
@@ -196,8 +198,17 @@ function hintFor(tool: ToolId): string {
       return 'Drag a rectangle to zone land. Roads and water are skipped.';
     case 'line':
       return 'Drag to run a power line from a power station or another line to a substation.';
-    case 'facility':
-      return `Click to place a ${facilityDef(tool.facility).name.toLowerCase()}. Connect it with power lines.`;
+    case 'main':
+      return 'Drag to lay or upgrade a water main. Roads already carry a 150 mm main.';
+    case 'facility': {
+      const def = facilityDef(tool.facility);
+      const name = def.name.toLowerCase();
+      if (def.utility === 'power') return `Click to place a ${name}. Connect it with power lines.`;
+      if (def.kind === 'intake') return 'Click on the riverbank to place a river intake.';
+      if (def.kind === 'sewage')
+        return 'Click beside a road to place a sewage treatment works. Sewers run under every road.';
+      return `Click beside a road or main to place a ${name}. It needs power to run.`;
+    }
     case 'bulldoze':
       return 'Drag a rectangle to clear roads, lines, buildings and zoning.';
   }

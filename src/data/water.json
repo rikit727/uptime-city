@@ -1,0 +1,301 @@
+{
+  "//": "Water supply and wastewater. Facility codes share the building code space (300+ here); main codes are stored in the world's water layer. Never renumber or reuse codes. Flows are litres per second (l/s), volumes megalitres (Ml), pressure metres of head (m). demandCurves are relative hourly factors (00:00 to 23:00), normalised to an average of 1 at load.",
+  "solveIntervalMinutes": 5,
+  "solveOffset": 2,
+  "pressure": { "goodM": 20, "lowM": 15, "noSupplyM": 5, "maxM": 255 },
+  "overlay": { "rampMaxM": 60, "ramp": ["#440154", "#3b528b", "#21918c", "#5ec962", "#fde725"] },
+  "deficitHeadExponent": 2,
+  "connectionRange": 1,
+  "outageGraceMinutes": 240,
+  "vacantUseFraction": 0.05,
+  "temperature": { "refC": 16, "perDegreeAbove": 0.025 },
+  "demandCurves": {
+    "residential": [
+      0.35, 0.3, 0.28, 0.28, 0.3, 0.5, 1.2, 1.9, 1.6, 1.1, 0.9, 0.85, 0.9, 0.85, 0.8, 0.85, 1, 1.3,
+      1.5, 1.45, 1.25, 1, 0.7, 0.5
+    ],
+    "commercial": [
+      0.2, 0.15, 0.15, 0.15, 0.15, 0.2, 0.4, 0.8, 1.2, 1.4, 1.5, 1.6, 1.7, 1.6, 1.5, 1.5, 1.4, 1.3,
+      1.1, 0.9, 0.7, 0.5, 0.3, 0.25
+    ],
+    "office": [
+      0.1, 0.1, 0.1, 0.1, 0.1, 0.15, 0.4, 1.2, 1.8, 1.7, 1.6, 1.7, 1.8, 1.7, 1.6, 1.5, 1.4, 1, 0.5,
+      0.3, 0.2, 0.15, 0.1, 0.1
+    ],
+    "industrial": [
+      0.7, 0.7, 0.7, 0.7, 0.7, 0.8, 1, 1.2, 1.3, 1.3, 1.3, 1.3, 1.2, 1.3, 1.3, 1.3, 1.2, 1.1, 1,
+      0.9, 0.85, 0.8, 0.75, 0.7
+    ],
+    "agricultural": [
+      0.4, 0.4, 0.4, 0.4, 0.4, 0.8, 1.2, 1.4, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.4, 1.3, 1.1,
+      0.9, 0.7, 0.5, 0.4, 0.4
+    ]
+  },
+  "irrigation": {
+    "seasonFactor": { "spring": 0.6, "summer": 1.4, "autumn": 0.4, "winter": 0 },
+    "refC": 15,
+    "perDegreeAbove": 0.08,
+    "heatwaveFactor": 1.25,
+    "rainStopsMmPerHour": 1,
+    "riverRangeTiles": 4,
+    "farmLicenceMlPerDay": 1.5
+  },
+  "wastewater": { "returnFraction": 0.9, "runoffCoefficient": 0.1 },
+  "mains": [
+    {
+      "id": "distribution",
+      "code": 1,
+      "name": "Distribution main (150 mm)",
+      "diameterMm": 150,
+      "capacityLps": 20,
+      "baseLossPerKm": 2,
+      "lossPerKmAtCapacity": 10,
+      "costPerTile": 15,
+      "colour": "#6fa8dc"
+    },
+    {
+      "id": "feeder",
+      "code": 2,
+      "name": "Feeder main (300 mm)",
+      "diameterMm": 300,
+      "capacityLps": 90,
+      "baseLossPerKm": 1,
+      "lossPerKmAtCapacity": 6,
+      "costPerTile": 40,
+      "colour": "#3d85c6"
+    },
+    {
+      "id": "trunk",
+      "code": 3,
+      "name": "Trunk main (600 mm)",
+      "diameterMm": 600,
+      "capacityLps": 350,
+      "baseLossPerKm": 0.5,
+      "lossPerKmAtCapacity": 4,
+      "costPerTile": 110,
+      "colour": "#1c4587"
+    }
+  ],
+  "mainWaterCostMultiplier": 3,
+  "mainDemolishCostPerTile": 8,
+  "facilities": [
+    {
+      "id": "intake",
+      "code": 300,
+      "name": "River intake",
+      "kind": "intake",
+      "footprint": [2, 2],
+      "capacityMlPerDay": 30,
+      "licenceMlPerDay": 24,
+      "powerKw": 250,
+      "priority": 1,
+      "cost": 18000,
+      "jobs": 2,
+      "parts": [
+        { "shape": "box", "x": 1, "z": 1, "w": 1.9, "d": 1.9, "h": 0.05, "colour": "#a9adb0" },
+        { "shape": "box", "x": 0.7, "z": 1, "w": 0.9, "d": 1.2, "h": 0.4, "colour": "#8a99a8" },
+        {
+          "shape": "gable",
+          "x": 0.7,
+          "z": 1,
+          "y": 0.4,
+          "w": 1,
+          "d": 1.3,
+          "h": 0.2,
+          "colour": "#5d6670"
+        },
+        {
+          "shape": "cylinder",
+          "x": 1.6,
+          "z": 0.5,
+          "w": 0.35,
+          "d": 0.35,
+          "h": 0.25,
+          "colour": "#6f7a83"
+        },
+        {
+          "shape": "cylinder",
+          "x": 1.6,
+          "z": 1.5,
+          "w": 0.35,
+          "d": 0.35,
+          "h": 0.25,
+          "colour": "#6f7a83"
+        }
+      ]
+    },
+    {
+      "id": "treatmentWorks",
+      "code": 301,
+      "name": "Water treatment works",
+      "kind": "treatment",
+      "footprint": [3, 3],
+      "capacityMlPerDay": 25,
+      "headM": 50,
+      "powerKw": 600,
+      "priority": 1,
+      "cost": 45000,
+      "jobs": 20,
+      "parts": [
+        { "shape": "box", "x": 1.5, "z": 1.5, "w": 2.9, "d": 2.9, "h": 0.04, "colour": "#a3a7a9" },
+        {
+          "shape": "box",
+          "x": 0.85,
+          "z": 0.75,
+          "w": 1.4,
+          "d": 1.1,
+          "h": 0.12,
+          "colour": "#4f8fb3"
+        },
+        { "shape": "box", "x": 0.85, "z": 2.1, "w": 1.4, "d": 1.3, "h": 0.5, "colour": "#d5d2c8" },
+        {
+          "shape": "cylinder",
+          "x": 2.3,
+          "z": 0.8,
+          "w": 0.9,
+          "d": 0.9,
+          "h": 0.35,
+          "colour": "#c8cdd1"
+        },
+        {
+          "shape": "cylinder",
+          "x": 2.3,
+          "z": 2.1,
+          "w": 0.9,
+          "d": 0.9,
+          "h": 0.35,
+          "colour": "#c8cdd1"
+        }
+      ]
+    },
+    {
+      "id": "serviceReservoir",
+      "code": 302,
+      "name": "Service reservoir",
+      "kind": "storage",
+      "footprint": [3, 3],
+      "storageMl": 15,
+      "headM": 42,
+      "powerKw": 5,
+      "priority": 1,
+      "cost": 22000,
+      "jobs": 0,
+      "parts": [
+        { "shape": "box", "x": 1.5, "z": 1.5, "w": 2.8, "d": 2.8, "h": 0.22, "colour": "#86ad6f" },
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.5,
+          "y": 0.22,
+          "w": 2.2,
+          "d": 2.2,
+          "h": 0.06,
+          "colour": "#94b97c"
+        },
+        { "shape": "box", "x": 2.6, "z": 0.4, "w": 0.4, "d": 0.4, "h": 0.4, "colour": "#b5a58d" }
+      ]
+    },
+    {
+      "id": "waterTower",
+      "code": 303,
+      "name": "Water tower",
+      "kind": "storage",
+      "footprint": [1, 1],
+      "storageMl": 1.5,
+      "headM": 58,
+      "powerKw": 0,
+      "priority": 1,
+      "cost": 9000,
+      "jobs": 0,
+      "parts": [
+        {
+          "shape": "cylinder",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.22,
+          "d": 0.22,
+          "h": 1.3,
+          "colour": "#c9c3b5"
+        },
+        {
+          "shape": "cylinder",
+          "x": 0.5,
+          "z": 0.5,
+          "y": 1.3,
+          "w": 0.8,
+          "d": 0.8,
+          "h": 0.45,
+          "colour": "#e3ded2"
+        }
+      ]
+    },
+    {
+      "id": "booster",
+      "code": 304,
+      "name": "Booster pumping station",
+      "kind": "booster",
+      "footprint": [1, 1],
+      "boostM": 25,
+      "powerKw": 90,
+      "priority": 1,
+      "cost": 8000,
+      "jobs": 1,
+      "parts": [
+        { "shape": "box", "x": 0.5, "z": 0.5, "w": 0.7, "d": 0.55, "h": 0.3, "colour": "#9fb4c7" },
+        {
+          "shape": "gable",
+          "x": 0.5,
+          "z": 0.5,
+          "y": 0.3,
+          "w": 0.75,
+          "d": 0.6,
+          "h": 0.16,
+          "colour": "#4c5966"
+        }
+      ]
+    },
+    {
+      "id": "sewageWorks",
+      "code": 305,
+      "name": "Sewage treatment works",
+      "kind": "sewage",
+      "footprint": [3, 3],
+      "capacityMlPerDay": 30,
+      "powerKw": 500,
+      "priority": 1,
+      "cost": 40000,
+      "jobs": 15,
+      "parts": [
+        { "shape": "box", "x": 1.5, "z": 1.5, "w": 2.9, "d": 2.9, "h": 0.04, "colour": "#9a9e98" },
+        {
+          "shape": "cylinder",
+          "x": 0.8,
+          "z": 0.8,
+          "w": 1.1,
+          "d": 1.1,
+          "h": 0.18,
+          "colour": "#6b7a62"
+        },
+        {
+          "shape": "cylinder",
+          "x": 2.2,
+          "z": 0.8,
+          "w": 1.1,
+          "d": 1.1,
+          "h": 0.18,
+          "colour": "#6b7a62"
+        },
+        {
+          "shape": "cylinder",
+          "x": 0.8,
+          "z": 2.2,
+          "w": 1.1,
+          "d": 1.1,
+          "h": 0.18,
+          "colour": "#748568"
+        },
+        { "shape": "box", "x": 2.2, "z": 2.2, "w": 0.9, "d": 0.8, "h": 0.4, "colour": "#c9c0ae" }
+      ]
+    }
+  ]
+}

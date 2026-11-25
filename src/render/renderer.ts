@@ -12,6 +12,7 @@ import { PreviewLayer } from './layers/preview';
 import type { PreviewTiles } from './layers/preview';
 import { RoadLayer } from './layers/roads';
 import { TerrainLayer } from './layers/terrain';
+import { WaterLayer } from './layers/water';
 import { ZoneLayer } from './layers/zones';
 import { Lighting } from './lighting';
 
@@ -27,6 +28,7 @@ export class GameRenderer {
   private readonly zones: ZoneLayer;
   private readonly buildings: BuildingLayer;
   private readonly power: PowerLayer;
+  private readonly water: WaterLayer;
   private readonly preview: PreviewLayer;
   private readonly raycaster = new Raycaster();
   private readonly groundPlane = new Plane(new Vector3(0, 1, 0), 0);
@@ -52,6 +54,7 @@ export class GameRenderer {
     this.zones = new ZoneLayer(mapWidth, mapHeight);
     this.buildings = new BuildingLayer(mapWidth, mapHeight);
     this.power = new PowerLayer();
+    this.water = new WaterLayer();
     this.preview = new PreviewLayer(mapWidth, mapHeight);
     this.scene.add(
       this.terrain.group,
@@ -59,6 +62,7 @@ export class GameRenderer {
       this.roads.group,
       this.buildings.group,
       this.power.group,
+      this.water.group,
       this.preview.group,
     );
     this.resize();
@@ -78,6 +82,17 @@ export class GameRenderer {
 
   setGridVisible(v: boolean): void {
     this.terrain.setGridVisible(v);
+  }
+
+  /** Show or hide the water pressure overlay (dims buildings and zoning while shown). */
+  setWaterOverlay(on: boolean): void {
+    this.water.setVisible(on);
+    this.buildings.setDim(on);
+    this.zones.setDim(on);
+  }
+
+  get waterOverlay(): boolean {
+    return this.water.visible;
   }
 
   setPreview(p: PreviewTiles | null): void {
@@ -110,6 +125,7 @@ export class GameRenderer {
     this.zones.invalidate();
     this.buildings.invalidate();
     this.power.invalidate();
+    this.water.invalidate();
     this.preview.show(null);
   }
 
@@ -121,6 +137,7 @@ export class GameRenderer {
     this.zones.update(snap);
     this.buildings.update(snap, night, dt, performance.now());
     this.power.update(snap, night);
+    this.water.update(snap, performance.now());
     this.lighting.update(snap.minute, snap.weather.cloud);
     this.renderer.render(this.scene, this.rig.camera);
   }

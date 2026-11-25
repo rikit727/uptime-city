@@ -10,13 +10,13 @@
  * substation within its service radius; a building is served via its centre tile.
  *
  * Dispatch: each building's load follows its zone's time-of-day curve and the
- * temperature. Renewables are used first, then gas, then batteries. If an
+ * temperature; water facilities (pumps, treatment) draw a steady load. Renewables are used first, then gas, then batteries. If an
  * island or a substation is short, load is shed by priority (power.json
  * `priorityNames`, 0 kept longest), and within a priority by a rota block that
  * moves on every `rota.minutes`, so outages roll round the city.
  */
 import { POWER, buildingDef } from './data';
-import type { FacilityDef } from './data';
+import type { BuildingDef, FacilityDef, GrownBuildingDef, WaterFacilityDef } from './data';
 import { centreOf, defOf, residentsOf } from './buildings';
 import type { SimEvent } from './events';
 import type { Building, PowerIsland, PowerStats, SimState } from './state';
@@ -26,8 +26,14 @@ import { tileIndex } from './world';
 
 const facilityDefOf = (b: Building): FacilityDef | undefined => {
   const def = defOf(b);
-  return def.role === 'facility' ? def : undefined;
+  return def.role === 'facility' && def.utility === 'power' ? def : undefined;
 };
+
+/** Buildings that draw power: grown buildings and water facilities with pumps. */
+const consumerDef = (
+  def: BuildingDef | undefined,
+): GrownBuildingDef | WaterFacilityDef | undefined =>
+  def?.role === 'grown' || (def?.utility === 'water' && def.powerKw > 0) ? def : undefined;
 
 const isGenerator = (def: FacilityDef): boolean =>
   def.kind === 'gas' || def.kind === 'solar' || def.kind === 'wind' || def.kind === 'battery';
@@ -242,13 +248,17 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
   cache.loadKw.clear();
   for (let k = 0; k < buildings.length; k++) {
     const b = buildings[k]!;
-    const def = buildingDef(b.code);
-    if (def?.role !== 'grown') continue;
-    const kw = def.powerKw * zoneFactor[def.zone] * (vacant + (1 - vacant) * b.occupancy);
+    const def = consumerDef(buildingDef(b.code));
+    if (!def) continue;
+    const kw =
+      def.role === 'grown'
+        ? def.powerKw * zoneFactor[def.zone] * (vacant + (1 - vacant) * b.occupancy)
+        : def.powerKw;
     cache.loadKw.set(b.id, kw);
     stats.demandMW += kw / 1000;
     const tile =
       (b.y + ((def.footprint[1] - 1) >> 1)) * w.width + b.x + ((def.footprint[0] - 1) >> 1);
+    // (Water facilities are placed on clear land, so their centre tile is in the coverage map too.)
     const sub = net.coverage[tile] ?? 0;
     if (sub === 0 || (net.feedMW.get(sub) ?? 0) <= 0) continue;
     const isl = islandIndex.get(net.islandOf.get(sub) ?? -1);
@@ -356,7 +366,7 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
 
   for (let k = 0; k < buildings.length; k++) {
     const b = buildings[k]!;
-    if (buildingDef(b.code)?.role !== 'grown') continue;
+    if (!consumerDef(buildingDef(b.code))) continue;
     const was = b.unpoweredMinutes === 0;
     if (served[k] === 1) b.unpoweredMinutes = 0;
     else {

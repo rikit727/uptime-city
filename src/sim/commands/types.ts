@@ -3,7 +3,15 @@
  * builds them, the sim validates and applies them, and they are logged with
  * their tick so a game can be replayed exactly.
  */
-import type { DensityId, FacilityId, LineTypeId, RoadClassId, TileCoord, ZoneId } from '../types';
+import type {
+  DensityId,
+  FacilityId,
+  LineTypeId,
+  MainTypeId,
+  RoadClassId,
+  TileCoord,
+  ZoneId,
+} from '../types';
 
 export interface BuildRoadCommand {
   type: 'buildRoad';
@@ -27,7 +35,7 @@ export interface BulldozeCommand {
   to: TileCoord;
 }
 
-/** Place a power facility with its footprint's top-left corner at `at`. */
+/** Place a power or water facility with its footprint's top-left corner at `at`. */
 export interface PlaceFacilityCommand {
   type: 'placeFacility';
   facility: FacilityId;
@@ -41,16 +49,30 @@ export interface BuildLineCommand {
   to: TileCoord;
 }
 
+/** Lay (or upgrade to) a water main along an L-shaped path. */
+export interface BuildMainCommand {
+  type: 'buildMain';
+  main: MainTypeId;
+  from: TileCoord;
+  to: TileCoord;
+}
+
 export type Command =
-  BuildRoadCommand | ZoneCommand | BulldozeCommand | PlaceFacilityCommand | BuildLineCommand;
+  | BuildRoadCommand
+  | ZoneCommand
+  | BulldozeCommand
+  | PlaceFacilityCommand
+  | BuildLineCommand
+  | BuildMainCommand;
 export type CommandType = Command['type'];
 
 /**
  * Which state layers changed, so renderers know what to rebuild. `building`:
  * buildings added or removed; `power`: lines or facilities; `supply`: which
- * buildings have power (lights at night).
+ * buildings have power (lights at night); `water`: mains, water facilities or
+ * pressures.
  */
-export type Layer = 'terrain' | 'road' | 'zone' | 'building' | 'power' | 'supply';
+export type Layer = 'terrain' | 'road' | 'zone' | 'building' | 'power' | 'supply' | 'water';
 
 /**
  * The outcome of planning a command against the current state, without changing it.

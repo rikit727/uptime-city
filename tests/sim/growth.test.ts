@@ -3,7 +3,7 @@ import { buildingTiles, defOf } from '../../src/sim/buildings';
 import { zoneType } from '../../src/sim/data';
 import { computeDemand, cityTotals } from '../../src/sim/growth';
 import { MINUTES_PER_DAY } from '../../src/sim/time';
-import { at, poweredTown, testSim } from './helpers';
+import { at, poweredTown, riverWater, testSim } from './helpers';
 
 describe('demand', () => {
   it('starts positive for every zone in an empty city', () => {
@@ -102,6 +102,7 @@ describe('growth', () => {
         to: { x: 10, y: 49 },
       }).ok,
     ).toBe(true);
+    riverWater(sim, 41, { x: 19, y: 40 }, { x: 25, y: 46 });
     // Farms appear along both roads.
     sim.step(4 * MINUTES_PER_DAY);
     const farms = sim.state.buildings.filter((b) => defOf(b).role === 'grown');
@@ -127,6 +128,7 @@ describe('growth', () => {
     });
     sim.dispatch({ type: 'placeFacility', facility: 'gasPlant', at: { x: 22, y: 41 } });
     sim.dispatch({ type: 'placeFacility', facility: 'substation', at: { x: 22, y: 44 } });
+    riverWater(sim, 30, { x: 19, y: 40 }, { x: 25, y: 42 });
     sim.step(2 * MINUTES_PER_DAY);
     const farm = sim.state.buildings.find((b) => defOf(b).role === 'grown');
     expect(farm).toBeDefined();

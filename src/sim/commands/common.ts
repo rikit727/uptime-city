@@ -80,21 +80,31 @@ export function finalisePlan(
   return { ok: true, cost, affected, blocked, layers, demolish, removed };
 }
 
-/** Grown-building ids on these tiles, and whether any tile holds a facility. */
+/** Grown-building ids on these tiles, and which tiles hold a facility (by utility). */
 export function buildingsUnder(
   state: SimState,
   tiles: readonly number[],
-): { grown: number[]; facilityTiles: Set<number> } {
+): {
+  grown: number[];
+  facilityTiles: Set<number>;
+  powerTiles: Set<number>;
+  waterTiles: Set<number>;
+} {
   const grown = new Set<number>();
   const facilityTiles = new Set<number>();
+  const powerTiles = new Set<number>();
+  const waterTiles = new Set<number>();
   for (const t of tiles) {
     const id = state.cache.buildingAt[t] ?? 0;
     if (id === 0) continue;
     const b = state.cache.byId.get(id)!;
-    if (buildingDef(b.code)?.role === 'facility') facilityTiles.add(t);
-    else grown.add(id);
+    const def = buildingDef(b.code);
+    if (def?.role === 'facility') {
+      facilityTiles.add(t);
+      (def.utility === 'power' ? powerTiles : waterTiles).add(t);
+    } else grown.add(id);
   }
-  return { grown: [...grown].sort((a, b) => a - b), facilityTiles };
+  return { grown: [...grown].sort((a, b) => a - b), facilityTiles, powerTiles, waterTiles };
 }
 
 /** Demolition cost for buildings: per footprint tile. */

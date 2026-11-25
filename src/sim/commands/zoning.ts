@@ -31,7 +31,13 @@ export function planZone(state: SimState, cmd: ZoneCommand): CommandPlan {
   const blocked: number[] = [];
   let edgeBlocked = 0;
   for (const i of tiles) {
-    if (isWater(w, i) || w.road[i] !== 0 || w.power[i] !== 0 || facilityTiles.has(i)) {
+    if (
+      isWater(w, i) ||
+      w.road[i] !== 0 ||
+      w.power[i] !== 0 ||
+      w.water[i] !== 0 ||
+      facilityTiles.has(i)
+    ) {
       blocked.push(i);
       continue;
     }

@@ -29,8 +29,20 @@ export const SEASON_ORDER: readonly SeasonId[] = ['spring', 'summer', 'autumn', 
 export type WeatherEventId = 'heatwave' | 'coldSnap' | 'storm';
 
 /** Power facility ids (src/data/power.json `facilities`). */
-export type FacilityId = 'gasPlant' | 'solarFarm' | 'windTurbine' | 'battery' | 'substation';
+export type PowerFacilityId = 'gasPlant' | 'solarFarm' | 'windTurbine' | 'battery' | 'substation';
 export type FacilityKind = 'gas' | 'solar' | 'wind' | 'battery' | 'substation';
+
+/** Water and wastewater facility ids (src/data/water.json `facilities`). */
+export type WaterFacilityId =
+  'intake' | 'treatmentWorks' | 'serviceReservoir' | 'waterTower' | 'booster' | 'sewageWorks';
+/** intake: river abstraction; treatment: clean-water works; storage: reservoir or tower. */
+export type WaterFacilityKind = 'intake' | 'treatment' | 'storage' | 'booster' | 'sewage';
+
+/** Any player-placed facility. */
+export type FacilityId = PowerFacilityId | WaterFacilityId;
+
+/** Water main ids (src/data/water.json `mains`). Codes live in the world's water layer. */
+export type MainTypeId = 'distribution' | 'feeder' | 'trunk';
 
 /** Power line type ids (src/data/power.json `lines`). Codes live in the world's power layer. */
 export type LineTypeId = 'distribution' | 'transmission';
