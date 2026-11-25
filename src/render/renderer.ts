@@ -7,6 +7,7 @@ import { daylight } from '../sim';
 import type { SimSnapshot } from '../sim';
 import { CameraRig } from './cameraRig';
 import { BuildingLayer } from './layers/buildings';
+import { CrewLayer } from './layers/crews';
 import { PowerLayer } from './layers/power';
 import { PreviewLayer } from './layers/preview';
 import type { PreviewTiles } from './layers/preview';
@@ -29,6 +30,7 @@ export class GameRenderer {
   private readonly buildings: BuildingLayer;
   private readonly power: PowerLayer;
   private readonly water: WaterLayer;
+  private readonly crews: CrewLayer;
   private readonly preview: PreviewLayer;
   private readonly raycaster = new Raycaster();
   private readonly groundPlane = new Plane(new Vector3(0, 1, 0), 0);
@@ -55,6 +57,7 @@ export class GameRenderer {
     this.buildings = new BuildingLayer(mapWidth, mapHeight);
     this.power = new PowerLayer();
     this.water = new WaterLayer();
+    this.crews = new CrewLayer();
     this.preview = new PreviewLayer(mapWidth, mapHeight);
     this.scene.add(
       this.terrain.group,
@@ -63,6 +66,7 @@ export class GameRenderer {
       this.buildings.group,
       this.power.group,
       this.water.group,
+      this.crews.group,
       this.preview.group,
     );
     this.resize();
@@ -126,6 +130,7 @@ export class GameRenderer {
     this.buildings.invalidate();
     this.power.invalidate();
     this.water.invalidate();
+    this.crews.invalidate();
     this.preview.show(null);
   }
 
@@ -138,6 +143,7 @@ export class GameRenderer {
     this.buildings.update(snap, night, dt, performance.now());
     this.power.update(snap, night);
     this.water.update(snap, performance.now());
+    this.crews.update(snap, performance.now());
     this.lighting.update(snap.minute, snap.weather.cloud);
     this.renderer.render(this.scene, this.rig.camera);
   }

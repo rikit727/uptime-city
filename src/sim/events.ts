@@ -2,7 +2,7 @@
  * Events the sim emits for the outside world (UI toasts, autosave, audio later).
  * They are notifications only: never part of the state and never read back by the sim.
  */
-import type { WeatherEventId } from './types';
+import type { CrewType, IncidentKind, WeatherEventId } from './types';
 
 export type SimEvent =
   | { type: 'dayStarted'; day: number }
@@ -17,4 +17,31 @@ export type SimEvent =
   | { type: 'sewerOverflow'; spillLps: number }
   | { type: 'sewerOverflowEnded'; spilledMl: number }
   | { type: 'abstractionLicenceBreached'; usedMl: number; licenceMl: number }
-  | { type: 'irrigationLicenceReached'; licenceMl: number };
+  | { type: 'irrigationLicenceReached'; licenceMl: number }
+  | {
+      type: 'incidentOpened';
+      id: number;
+      kind: IncidentKind;
+      name: string;
+      severity: number;
+      x: number;
+      y: number;
+    }
+  | {
+      type: 'incidentResolved';
+      id: number;
+      name: string;
+      minutes: number;
+      outcome: '' | 'repaired' | 'removed' | 'cleared';
+    }
+  | { type: 'slaBreached'; id: number; name: string }
+  | {
+      type: 'priorityCustomersAffected';
+      id: number;
+      name: string;
+      buildings: number;
+      /** A bottled-water response can be sent. */
+      bottledWater: boolean;
+    }
+  | { type: 'maintenanceCompleted'; name: string; x: number; y: number }
+  | { type: 'noCrew'; crew: CrewType };

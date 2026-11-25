@@ -5,7 +5,7 @@
  */
 import { GAME_NAME } from '../config';
 import { GAME, Simulation } from '../sim';
-import type { DensityId, SimEvent, WeatherEventId } from '../sim';
+import type { Command, DensityId, SimEvent, WeatherEventId } from '../sim';
 import { GameRenderer } from '../render/renderer';
 import { downloadSave, pickSaveFileText } from '../platform/fileTransfer';
 import { createSaveFile, parseSaveFile, simulationFromSave } from '../platform/saveFormat';
@@ -16,6 +16,7 @@ import type { Settings } from '../platform/settings';
 import { Hud, randomSeed } from '../ui/hud';
 import type { UiActions } from '../ui/hud';
 import { formatInt } from '../ui/format';
+import { CREW_NAMES, formatDuration } from '../ui/inbox';
 import { TOOLS } from '../ui/tools';
 import type { ToolId } from '../ui/tools';
 import { CameraInput } from './cameraInput';
@@ -140,6 +141,35 @@ export class Game {
           'warn',
         );
         break;
+      case 'incidentOpened':
+        this.toast(
+          `${ev.name} at ${ev.x}, ${ev.y}.${ev.severity >= 3 ? ' Serious: customers are affected.' : ''} Open the incident inbox (\`) for details.`,
+          ev.severity >= 3 ? 'error' : ev.kind === 'roadDefect' ? 'info' : 'warn',
+        );
+        break;
+      case 'incidentResolved':
+        if (ev.outcome === 'repaired')
+          this.toast(`${ev.name} repaired after ${formatDuration(ev.minutes)}.`, 'good');
+        else if (ev.outcome === 'cleared') this.toast(`${ev.name} over.`, 'good');
+        break;
+      case 'slaBreached':
+        this.toast(`${ev.name}: the repair target time has been missed.`, 'warn');
+        break;
+      case 'priorityCustomersAffected':
+        this.toast(
+          `${ev.name} has cut off ${ev.buildings === 1 ? 'a priority customer' : `${ev.buildings} priority customers`}.${ev.bottledWater ? ' Send bottled water from the incident inbox.' : ''}`,
+          'error',
+        );
+        break;
+      case 'maintenanceCompleted':
+        this.toast(`${ev.name} finished at ${ev.x}, ${ev.y}.`, 'good');
+        break;
+      case 'noCrew':
+        this.toast(
+          `No ${CREW_NAMES[ev.crew].toLowerCase()} crew to send. Build a depot (Maintenance tools) so faults get fixed.`,
+          'warn',
+        );
+        break;
       case 'irrigationLicenceReached':
         this.toast(
           `Farm irrigation licence used up (${ev.licenceMl} Ml today). Farms by the river switch to the mains or go without until midnight.`,
@@ -187,11 +217,16 @@ export class Game {
       return;
     }
     if (this.hud.modalOpen || e.ctrlKey || e.metaKey || e.altKey) return;
+    const shiftTool = e.shiftKey ? TOOLS.find((t) => t.shift && t.code === e.code) : undefined;
+    if (shiftTool) {
+      this.tools.selectTool(shiftTool.tool);
+      return;
+    }
     if (this.cameraInput.keyDown(e.code)) {
       e.preventDefault();
       return;
     }
-    const tool = TOOLS.find((t) => t.code === e.code);
+    const tool = TOOLS.find((t) => !t.shift && t.code === e.code);
     if (tool) {
       this.tools.selectTool(tool.tool);
       return;
@@ -222,6 +257,9 @@ export class Game {
         break;
       case 'KeyO':
         this.toggleWaterOverlay();
+        break;
+      case 'Backquote':
+        this.hud.inbox.toggle();
         break;
     }
   }
@@ -280,6 +318,20 @@ export class Game {
       },
       helpClosed: () => this.updateSettings({ seenHelp: true }),
       toggleWaterOverlay: () => this.toggleWaterOverlay(),
+      dispatch: (cmd: Command) => {
+        const r = this.sim.dispatch(cmd);
+        if (!r.ok) toast(r.reason ?? 'That is not possible.', 'warn');
+      },
+      focusTile: (tile: number) => {
+        const w = this.sim.state.world.width;
+        const rig = this.renderer.rig;
+        rig.target.set((tile % w) + 0.5, 0, Math.floor(tile / w) + 0.5);
+        rig.distance = Math.min(rig.distance, 45);
+        rig.apply();
+        this.tools.selectTool({ kind: 'inspect' });
+        this.hud.inspector.show(tile);
+      },
+      setThreshold: (below: number) => this.tools.setThreshold(below),
     };
   }
 

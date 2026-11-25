@@ -209,12 +209,53 @@ describe('migrations', () => {
     const sim = simulationFromSave(save);
     expect(sim.state.world.water[128 * 20 + 5]).toBe(1);
     expect(sim.state.world.water[128 * 21 + 5]).toBe(0);
-    expect(sim.state.buildings[0]).toMatchObject({ storedMl: 0, dryMinutes: 0 });
+    expect(sim.state.buildings[0]).toMatchObject({ storedMl: 0, dryMinutes: 0, condition: 100 });
     expect(sim.state.water.cursor).toBe(-1);
     expect(sim.state.cache.water.networks).toHaveLength(1);
     sim.step(30);
     // No water source yet, so the old house is now without water.
     expect(sim.state.buildings[0]!.dryMinutes).toBeGreaterThan(0);
+  });
+
+  it('upgrades a version 3 save (milestone 3): asset condition, ages, incidents, crews', () => {
+    const v3 = MIGRATIONS[2]!(
+      MIGRATIONS[1]!({
+        format: SAVE_FORMAT,
+        version: 1,
+        meta: { gameName: 'x', label: 'm3', savedAt: '', day: 3, minute: 3000, cash: 5, seed: 3 },
+        state: {
+          seed: 3,
+          tick: 2640,
+          minute: 3000,
+          rngState: 1234,
+          cash: 5,
+          world: {
+            width: 128,
+            height: 128,
+            terrain: [0, 16384],
+            road: [0, 128 * 20, 2, 30, 0, 16384 - 128 * 20 - 30],
+            zone: [0, 16384],
+            density: [0, 16384],
+          },
+        },
+      }),
+    );
+    const st = v3.state as { buildings: unknown[]; world: { power: number[] } };
+    st.buildings = [[1, 200, 5, 30, 1, 0, 0, 0, 0]];
+    st.world.power = [0, 128 * 40, 1, 10, 0, 16384 - 128 * 40 - 10];
+    const save = parseSaveFile(JSON.stringify(v3));
+    expect(save.version).toBe(CURRENT_SAVE_VERSION);
+    const sim = simulationFromSave(save);
+    const w = sim.state.world;
+    expect(w.condition.road[128 * 20 + 5]).toBe(10000);
+    expect(w.condition.main[128 * 20 + 5]).toBe(10000);
+    expect(w.condition.line[128 * 40 + 3]).toBe(10000);
+    expect(w.condition.road[128 * 21]).toBe(0);
+    expect(w.laid.road[128 * 20 + 5]).toBe(3);
+    expect(sim.state.buildings[0]).toMatchObject({ condition: 100, builtDay: 3, peakLoad: 0 });
+    expect(sim.state.incidents).toEqual([]);
+    expect(sim.state.crews).toEqual([]);
+    sim.step(30);
   });
 
   it('runs each step in order up to the target version', () => {

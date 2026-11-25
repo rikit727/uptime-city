@@ -4,6 +4,18 @@
  * register both here.
  */
 import type { SimState } from '../state';
+import {
+  applyAssignCrew,
+  applyCancelOrder,
+  applyRaiseMaintenance,
+  applySendBottledWater,
+  applySetOrderPriority,
+  planAssignCrew,
+  planCancelOrder,
+  planRaiseMaintenance,
+  planSendBottledWater,
+  planSetOrderPriority,
+} from './assets';
 import { applyBulldoze, planBulldoze } from './bulldoze';
 import { rejected } from './common';
 import { applyPlaceFacility, planPlaceFacility } from './facilities';
@@ -29,6 +41,11 @@ const handlers: HandlerMap = {
   placeFacility: { plan: planPlaceFacility, apply: applyPlaceFacility },
   buildLine: { plan: planBuildLine, apply: applyBuildLine },
   buildMain: { plan: planBuildMain, apply: applyBuildMain },
+  raiseMaintenance: { plan: planRaiseMaintenance, apply: applyRaiseMaintenance },
+  setOrderPriority: { plan: planSetOrderPriority, apply: applySetOrderPriority },
+  assignCrew: { plan: planAssignCrew, apply: applyAssignCrew },
+  cancelOrder: { plan: planCancelOrder, apply: applyCancelOrder },
+  sendBottledWater: { plan: planSendBottledWater, apply: applySendBottledWater },
 };
 
 function handlerFor(cmd: Command): Handler<Command> | undefined {

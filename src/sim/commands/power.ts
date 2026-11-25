@@ -1,6 +1,8 @@
 import { POWER, lineType } from '../data';
 import { rebuildEstates } from '../estates';
 import { roadPath } from '../geometry';
+import { layTileAsset } from '../assets';
+import { retireAsset } from '../incidents';
 import { rebuildNetwork } from '../power';
 import type { SimState } from '../state';
 import { isWater } from '../world';
@@ -31,7 +33,7 @@ export function planBuildLine(state: SimState, cmd: BuildLineCommand): CommandPl
   }
   const w = state.world;
   const path = indicesInBounds(state, roadPath(cmd.from, cmd.to));
-  const { grown, powerTiles, waterTiles } = buildingsUnder(state, path);
+  const { grown, powerTiles, waterTiles, depotTiles } = buildingsUnder(state, path);
   const grownTiles = new Set(
     path.filter((i) => (state.cache.buildingAt[i] ?? 0) !== 0 && !powerTiles.has(i)),
   );
@@ -56,6 +58,7 @@ export function planBuildLine(state: SimState, cmd: BuildLineCommand): CommandPl
     `There is already a ${def.name.toLowerCase()} here.`,
   );
   if (waterTiles.size > 0) return refuse(plan, 'A water facility is in the way.');
+  if (depotTiles.size > 0) return refuse(plan, 'A depot is in the way.');
   return grown.length > 0 ? refuse(plan, 'A building is in the way. Bulldoze it first.') : plan;
 }
 
@@ -64,7 +67,9 @@ export function applyBuildLine(state: SimState, cmd: BuildLineCommand, plan: Com
   const w = state.world;
   let rezoned = false;
   for (const i of plan.affected) {
+    if (w.power[i] !== 0) retireAsset(state, { layer: 'line', id: i });
     w.power[i] = code;
+    layTileAsset(state, 'line', i);
     if (w.zone[i] !== 0) rezoned = true;
     w.zone[i] = 0;
     w.density[i] = 0;

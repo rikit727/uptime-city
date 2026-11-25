@@ -1,0 +1,365 @@
+{
+  "//": "Asset condition, failures, incidents, work orders and crews. Condition is 0-100 (100 = new). decayPerDay is lost every day; loadDecayPerDay is added at full load, scaled by (peak load share)^2 (main flow / capacity, line loading, plant output; road traffic arrives in M5). failureCurve gives the daily failure probability against condition (interpolated); each class multiplies it by failureScale and by weather multipliers while that weather event is on. Depot codes share the building code space (400+). Never renumber or reuse codes.",
+  "failureCurve": [
+    [100, 0.00003],
+    [80, 0.0001],
+    [60, 0.0004],
+    [40, 0.0015],
+    [20, 0.005],
+    [0, 0.02]
+  ],
+  "repairRestoresTo": 60,
+  "maintenanceRestoresTo": 100,
+  "excavationRoadWear": 5,
+  "burstLeakFraction": 0.5,
+  "householdSize": 2.4,
+  "maintenanceThresholds": [50, 70, 90],
+  "resolvedKept": 30,
+  "migrationCondition": 100,
+  "crews": { "mobiliseMinutes": 30, "offRoadKmh": 8, "roadSearchRadius": 3 },
+  "bottledWater": { "cost": 2500 },
+  "severity": {
+    "names": ["", "Low", "Medium", "High", "Critical"],
+    "customerSteps": [50, 250],
+    "priorityCustomerBump": 1
+  },
+  "priorityNames": ["", "Emergency", "Urgent", "Normal", "Routine"],
+  "incidents": {
+    "burst": { "name": "Burst water main", "severity": 2, "slaMinutes": 360 },
+    "cableFault": { "name": "Power cable fault", "severity": 2, "slaMinutes": 240 },
+    "roadDefect": { "name": "Road surface failure", "severity": 1, "slaMinutes": 2880 },
+    "facilityFault": { "name": "Equipment failure", "severity": 2, "slaMinutes": 720 },
+    "overflow": { "name": "Storm overflow", "severity": 2, "slaMinutes": 0 }
+  },
+  "tileClasses": [
+    {
+      "id": "roadLocal",
+      "layer": "road",
+      "code": 1,
+      "name": "Local road",
+      "crew": "roads",
+      "failure": "roadDefect",
+      "decayPerDay": 0.15,
+      "loadDecayPerDay": 0.3,
+      "failureScale": 1,
+      "weather": { "coldSnap": 2 },
+      "repair": { "minutes": 120, "cost": 800 },
+      "maintenance": { "name": "Resurfacing", "minutes": 360, "cost": 1200 }
+    },
+    {
+      "id": "roadAvenue",
+      "layer": "road",
+      "code": 2,
+      "name": "Avenue",
+      "crew": "roads",
+      "failure": "roadDefect",
+      "decayPerDay": 0.12,
+      "loadDecayPerDay": 0.3,
+      "failureScale": 1,
+      "weather": { "coldSnap": 2 },
+      "repair": { "minutes": 150, "cost": 1200 },
+      "maintenance": { "name": "Resurfacing", "minutes": 420, "cost": 2500 }
+    },
+    {
+      "id": "roadHighway",
+      "layer": "road",
+      "code": 3,
+      "name": "Highway",
+      "crew": "roads",
+      "failure": "roadDefect",
+      "decayPerDay": 0.1,
+      "loadDecayPerDay": 0.3,
+      "failureScale": 1,
+      "weather": { "coldSnap": 2 },
+      "repair": { "minutes": 180, "cost": 2000 },
+      "maintenance": { "name": "Resurfacing", "minutes": 480, "cost": 5000 }
+    },
+    {
+      "id": "mainDistribution",
+      "layer": "main",
+      "code": 1,
+      "name": "Distribution main",
+      "crew": "water",
+      "failure": "burst",
+      "decayPerDay": 0.12,
+      "loadDecayPerDay": 0.4,
+      "failureScale": 1,
+      "weather": { "coldSnap": 4 },
+      "repair": { "minutes": 240, "cost": 3000 },
+      "maintenance": { "name": "Main renewal", "minutes": 480, "cost": 2500 }
+    },
+    {
+      "id": "mainFeeder",
+      "layer": "main",
+      "code": 2,
+      "name": "Feeder main",
+      "crew": "water",
+      "failure": "burst",
+      "decayPerDay": 0.1,
+      "loadDecayPerDay": 0.4,
+      "failureScale": 0.8,
+      "weather": { "coldSnap": 4 },
+      "repair": { "minutes": 300, "cost": 5000 },
+      "maintenance": { "name": "Main renewal", "minutes": 540, "cost": 5000 }
+    },
+    {
+      "id": "mainTrunk",
+      "layer": "main",
+      "code": 3,
+      "name": "Trunk main",
+      "crew": "water",
+      "failure": "burst",
+      "decayPerDay": 0.08,
+      "loadDecayPerDay": 0.4,
+      "failureScale": 0.6,
+      "weather": { "coldSnap": 4 },
+      "repair": { "minutes": 420, "cost": 9000 },
+      "maintenance": { "name": "Main renewal", "minutes": 600, "cost": 10000 }
+    },
+    {
+      "id": "lineDistribution",
+      "layer": "line",
+      "code": 1,
+      "name": "Distribution line",
+      "crew": "power",
+      "failure": "cableFault",
+      "decayPerDay": 0.1,
+      "loadDecayPerDay": 0.3,
+      "failureScale": 1,
+      "weather": { "storm": 3 },
+      "repair": { "minutes": 180, "cost": 1500 },
+      "maintenance": { "name": "Line refurbishment", "minutes": 300, "cost": 1500 }
+    },
+    {
+      "id": "lineTransmission",
+      "layer": "line",
+      "code": 2,
+      "name": "Transmission line",
+      "crew": "power",
+      "failure": "cableFault",
+      "decayPerDay": 0.08,
+      "loadDecayPerDay": 0.3,
+      "failureScale": 0.8,
+      "weather": { "storm": 3 },
+      "repair": { "minutes": 300, "cost": 4000 },
+      "maintenance": { "name": "Line refurbishment", "minutes": 420, "cost": 4000 }
+    }
+  ],
+  "facilityClasses": [
+    {
+      "kind": "gas",
+      "crew": "power",
+      "decayPerDay": 0.1,
+      "loadDecayPerDay": 0.15,
+      "failureScale": 1,
+      "repair": { "minutes": 480, "cost": 12000 },
+      "maintenance": { "name": "Overhaul", "minutes": 720, "cost": 15000 }
+    },
+    {
+      "kind": "solar",
+      "crew": "power",
+      "decayPerDay": 0.06,
+      "loadDecayPerDay": 0,
+      "failureScale": 0.6,
+      "repair": { "minutes": 240, "cost": 3000 },
+      "maintenance": { "name": "Panel servicing", "minutes": 360, "cost": 4000 }
+    },
+    {
+      "kind": "wind",
+      "crew": "power",
+      "decayPerDay": 0.12,
+      "loadDecayPerDay": 0.1,
+      "failureScale": 1,
+      "weather": { "storm": 2 },
+      "repair": { "minutes": 360, "cost": 5000 },
+      "maintenance": { "name": "Turbine servicing", "minutes": 480, "cost": 6000 }
+    },
+    {
+      "kind": "battery",
+      "crew": "power",
+      "decayPerDay": 0.08,
+      "loadDecayPerDay": 0.1,
+      "failureScale": 0.6,
+      "repair": { "minutes": 300, "cost": 6000 },
+      "maintenance": { "name": "Cell servicing", "minutes": 480, "cost": 8000 }
+    },
+    {
+      "kind": "substation",
+      "crew": "power",
+      "decayPerDay": 0.08,
+      "loadDecayPerDay": 0.2,
+      "failureScale": 1,
+      "weather": { "storm": 1.5 },
+      "repair": { "minutes": 300, "cost": 5000 },
+      "maintenance": { "name": "Switchgear overhaul", "minutes": 480, "cost": 6000 }
+    },
+    {
+      "kind": "intake",
+      "crew": "water",
+      "decayPerDay": 0.08,
+      "loadDecayPerDay": 0.15,
+      "failureScale": 1,
+      "repair": { "minutes": 360, "cost": 4000 },
+      "maintenance": { "name": "Pump overhaul", "minutes": 480, "cost": 5000 }
+    },
+    {
+      "kind": "treatment",
+      "crew": "water",
+      "decayPerDay": 0.08,
+      "loadDecayPerDay": 0.15,
+      "failureScale": 1,
+      "repair": { "minutes": 600, "cost": 10000 },
+      "maintenance": { "name": "Works overhaul", "minutes": 720, "cost": 12000 }
+    },
+    {
+      "kind": "storage",
+      "crew": "water",
+      "decayPerDay": 0.04,
+      "loadDecayPerDay": 0,
+      "failureScale": 0.5,
+      "repair": { "minutes": 480, "cost": 5000 },
+      "maintenance": { "name": "Inspection and relining", "minutes": 600, "cost": 6000 }
+    },
+    {
+      "kind": "booster",
+      "crew": "water",
+      "decayPerDay": 0.1,
+      "loadDecayPerDay": 0.15,
+      "failureScale": 1,
+      "repair": { "minutes": 240, "cost": 2500 },
+      "maintenance": { "name": "Pump overhaul", "minutes": 360, "cost": 3000 }
+    },
+    {
+      "kind": "sewage",
+      "crew": "water",
+      "decayPerDay": 0.08,
+      "loadDecayPerDay": 0.15,
+      "failureScale": 1,
+      "repair": { "minutes": 600, "cost": 9000 },
+      "maintenance": { "name": "Works overhaul", "minutes": 720, "cost": 11000 }
+    }
+  ],
+  "depots": [
+    {
+      "id": "roadsDepot",
+      "code": 400,
+      "name": "Highways depot",
+      "kind": "depot",
+      "crewType": "roads",
+      "crews": 2,
+      "footprint": [2, 2],
+      "cost": 15000,
+      "jobs": 12,
+      "parts": [
+        { "shape": "box", "x": 1, "z": 1, "w": 1.95, "d": 1.95, "h": 0.03, "colour": "#9c9a92" },
+        { "shape": "box", "x": 0.6, "z": 0.65, "w": 1, "d": 1, "h": 0.45, "colour": "#c9b27c" },
+        {
+          "shape": "gable",
+          "x": 0.6,
+          "z": 0.65,
+          "y": 0.45,
+          "w": 1.05,
+          "d": 1.05,
+          "h": 0.2,
+          "colour": "#6e6a5e"
+        },
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.45,
+          "w": 0.35,
+          "d": 0.6,
+          "h": 0.22,
+          "colour": "#e8a33d"
+        },
+        {
+          "shape": "cylinder",
+          "x": 1.5,
+          "z": 0.5,
+          "w": 0.6,
+          "d": 0.6,
+          "h": 0.25,
+          "colour": "#d8cfb8"
+        }
+      ]
+    },
+    {
+      "id": "waterDepot",
+      "code": 401,
+      "name": "Water network depot",
+      "kind": "depot",
+      "crewType": "water",
+      "crews": 2,
+      "footprint": [2, 2],
+      "cost": 15000,
+      "jobs": 12,
+      "parts": [
+        { "shape": "box", "x": 1, "z": 1, "w": 1.95, "d": 1.95, "h": 0.03, "colour": "#9c9a92" },
+        { "shape": "box", "x": 0.6, "z": 0.65, "w": 1, "d": 1, "h": 0.45, "colour": "#9fb8cc" },
+        {
+          "shape": "gable",
+          "x": 0.6,
+          "z": 0.65,
+          "y": 0.45,
+          "w": 1.05,
+          "d": 1.05,
+          "h": 0.2,
+          "colour": "#4c5966"
+        },
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.45,
+          "w": 0.35,
+          "d": 0.6,
+          "h": 0.22,
+          "colour": "#3d85c6"
+        },
+        { "shape": "box", "x": 1.45, "z": 0.5, "w": 0.5, "d": 0.5, "h": 0.15, "colour": "#5d6670" }
+      ]
+    },
+    {
+      "id": "powerDepot",
+      "code": 402,
+      "name": "Electricity network depot",
+      "kind": "depot",
+      "crewType": "power",
+      "crews": 2,
+      "footprint": [2, 2],
+      "cost": 15000,
+      "jobs": 12,
+      "parts": [
+        { "shape": "box", "x": 1, "z": 1, "w": 1.95, "d": 1.95, "h": 0.03, "colour": "#9c9a92" },
+        { "shape": "box", "x": 0.6, "z": 0.65, "w": 1, "d": 1, "h": 0.45, "colour": "#c7c3b8" },
+        {
+          "shape": "gable",
+          "x": 0.6,
+          "z": 0.65,
+          "y": 0.45,
+          "w": 1.05,
+          "d": 1.05,
+          "h": 0.2,
+          "colour": "#5a5f66"
+        },
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.45,
+          "w": 0.35,
+          "d": 0.6,
+          "h": 0.22,
+          "colour": "#f1c232"
+        },
+        {
+          "shape": "cylinder",
+          "x": 1.45,
+          "z": 0.5,
+          "w": 0.4,
+          "d": 0.4,
+          "h": 0.4,
+          "colour": "#7f8a93"
+        }
+      ]
+    }
+  ]
+}

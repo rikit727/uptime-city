@@ -53,8 +53,9 @@ Before committing: `npm run lint && npm test && npm run build`.
   by `rebuildCache()`. It must be a pure function of saved state. Commands
   that change zoning, lines or facilities call `rebuildEstates()` /
   `rebuildNetwork()`; commands that change roads, mains or water facilities
-  call `rebuildWater()`; use `addBuilding()` / `removeBuildings()` so the tile
-  index stays in step.
+  call `rebuildWater()`; anything that opens, closes or moves incidents and work
+  orders on site calls `rebuildFaults()`; use `addBuilding()` /
+  `removeBuildings()` so the tile index stays in step.
 - **Imports:** in `src/` outside the sim, import sim things from `src/sim` (the index),
   not deep paths (tests may import deep paths). Use `import type` for types (lint enforces).
 - **Style:** Prettier (single quotes, 100 cols). Strict TS with
@@ -159,10 +160,30 @@ the id in `MainTypeId` and a tool. Pressure thresholds, demand curves,
 irrigation, the farm licence, storm runoff and the overlay ramp are in the same
 file.
 
-### An asset type (from milestone 4)
+### An asset type
 
-Not implemented yet. Planned: `src/data/assets.json` with decay rate, failure
-curve, repair crew type and duration. Update this section in milestone 4.
+Asset classes are pure data in `src/data/assets.json`:
+
+- A road class, main size or line type gets a `tileClasses` entry: `id`,
+  `layer` (`road` | `main` | `line`), `code` (the road/main/line code it
+  covers), `name`, `crew` (`roads` | `water` | `power`), `failure` (incident
+  kind: `roadDefect`, `burst`, `cableFault`), `decayPerDay`, `loadDecayPerDay`
+  (added at full load, × load²), `failureScale` (× the shared `failureCurve`),
+  optional `weather` multipliers by weather event id, `repair` and
+  `maintenance` (`minutes`, `cost`; maintenance also has a `name`).
+- A facility kind gets a `facilityClasses` entry keyed by `kind` (same fields
+  without `id`/`layer`/`code`/`name`/`failure`; failures are `facilityFault`).
+- Depots are `depots` entries (codes 400+): `crewType`, `crews`, `footprint`,
+  `cost`, `jobs`, `parts`. Add the id to `DepotId` and a tool in `src/ui/tools.ts`.
+- A new incident kind needs an `incidents` entry, the id in `IncidentKind`
+  (`src/sim/types.ts`), its effect in `rebuildFaults` and its customer count in
+  `updateImpacts` (`src/sim/incidents.ts`), and the serializer's kind list.
+
+New tile assets must be laid with `layTileAsset()` and removed with
+`retireAsset()` + `clearTileAsset()` in the commands that change roads, mains
+or lines; facilities get condition 100 from `addBuilding()`. Commands that
+change incidents or work orders call `rebuildFaults()` (and `rebuildNetwork()`
+if a line or power facility is affected).
 
 ### A scenario (from milestone 7)
 
@@ -177,9 +198,14 @@ section in milestone 7.
   (`.state`, `.hash()`, `.commandLog`, `.dispatch(cmd)`).
 - Settings live in `localStorage['uptime-city-settings']`; saves in IndexedDB
   `uptime-city-saves`.
+- Assets: `.state.incidents`, `.state.workOrders`, `.state.crews`,
+  `.state.assets.kpi`, `.state.world.condition.main[tile]` (×100),
+  `.state.cache.faults` (fault bits per tile, facilities offline). Press `
+  for the incident inbox.
 - Water: `uptimeCity.debugSim.state.cache.waterStats` (city figures),
   `.state.world.pressure` (per-tile head), `.state.cache.water` (networks,
   zones, sewers). Press O for the pressure overlay.
 - Tests on a fixed map: `tests/sim/helpers.ts` has `poweredTown()` (which adds
   `waterSupply()` unless told not to) and `riverWater()`; on generated maps use
-  `waterSupplyCommands()`.
+  `waterSupplyCommands()`. To test a failure, call `openIncident()` directly
+  rather than relying on the failure roll; `visitTile()` runs one day's decay.

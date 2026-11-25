@@ -2,6 +2,16 @@
 import {
   GAME,
   LPS_PER_MLD,
+  TILE_ASSET_LAYERS,
+  ageYears,
+  assetKey,
+  conditionBand,
+  dayOf,
+  depotDefOf,
+  facilityAssetDef,
+  failureProbability,
+  severityName,
+  tileClassAt,
   POWER,
   Terrain,
   WATER,
@@ -23,16 +33,39 @@ import {
   seasonOf,
   zoneTypeByCode,
 } from '../sim';
-import type { Building, GrownBuildingDef, SimSnapshot, WaterFacilityDef } from '../sim';
+import type {
+  AssetRef,
+  Building,
+  Command,
+  GrownBuildingDef,
+  SimSnapshot,
+  TileAssetLayer,
+  WaterFacilityDef,
+} from '../sim';
 import { clear, h } from './dom';
 import { formatInt, formatMW, formatMoney } from './format';
+import { crewLabel, formatDuration } from './inbox';
 
 type Row = [string, string];
+
+const LAYER_NAMES: Record<TileAssetLayer, string> = {
+  road: 'Road',
+  main: 'Water main',
+  line: 'Power line',
+};
+
+export interface InspectorActions {
+  dispatch(cmd: Command): void;
+}
 
 export class Inspector {
   readonly el = h('aside', { class: 'panel inspector hidden', 'aria-label': 'Inspector' });
   private tile: number | null = null;
   private shownKey = '';
+  /** Maintenance buttons for the assets on the shown tile. */
+  private buttons: HTMLElement[] = [];
+
+  constructor(private readonly actions: InspectorActions) {}
 
   show(tile: number | null): void {
     this.tile = tile;
@@ -46,7 +79,8 @@ export class Inspector {
     const i = this.tile;
     const r = snap.revisions;
     // Live figures (load, output, weather) refresh every 10 game minutes.
-    const key = `${i}:${r.road}:${r.zone}:${r.terrain}:${r.building}:${r.power}:${r.supply}:${r.water}:${Math.floor(snap.minute / 10)}`;
+    const work = snap.workOrders.map((o) => o.status).join();
+    const key = `${i}:${r.road}:${r.zone}:${r.terrain}:${r.building}:${r.power}:${r.supply}:${r.water}:${Math.floor(snap.minute / 10)}:${snap.assets.nextIncidentId}:${snap.assets.nextOrderId}:${work}:${snap.cash < 0}`;
     if (key === this.shownKey) return;
     this.shownKey = key;
 
@@ -89,6 +123,8 @@ export class Inspector {
       ]);
       rows.push(['Estate load', formatMW(st.loadKw / 1000)]);
     }
+    this.buttons = [];
+    for (const layer of TILE_ASSET_LAYERS) this.tileAssetRows(snap, layer, i, rows);
     const bId = snap.buildingAt[i] ?? 0;
     const building = bId !== 0 ? snap.buildingById.get(bId) : undefined;
     let title = road ? road.name : zone ? zone.name : water ? 'River' : 'Empty land';
@@ -104,6 +140,146 @@ export class Inspector {
       h('h3', {}, title),
       h('dl', {}, ...rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])),
     );
+    if (this.buttons.length > 0)
+      this.el.append(h('div', { class: 'inspector-actions' }, ...this.buttons));
+  }
+
+  /** Condition, age, risk and work for one asset; adds a "book maintenance" button. */
+  private assetRows(
+    snap: SimSnapshot,
+    ref: AssetRef,
+    label: string,
+    condition: number,
+    laidDay: number,
+    risk: number,
+    maintenance: { name: string; cost: number; minutes: number },
+    rows: Row[],
+  ): void {
+    const age = laidDay > 0 ? dayOf(snap.minute) - laidDay : 0;
+    const years = ageYears(age);
+    const ageText =
+      age < 1
+        ? 'new'
+        : years < 1
+          ? `${age} day${age === 1 ? '' : 's'} old`
+          : `${years.toFixed(1)} years old`;
+    rows.push([
+      `${label} condition`,
+      `${Math.round(condition)}/100 (${conditionBand(condition)}), ${ageText}`,
+    ]);
+    rows.push([`${label} failure risk`, `${(risk * 100).toFixed(risk < 0.001 ? 3 : 2)}% a day`]);
+    const key = assetKey(ref);
+    const incId = snap.faults.incidentAt.get(key);
+    const inc = incId !== undefined ? snap.incidents.find((x) => x.id === incId) : undefined;
+    if (inc)
+      rows.push([
+        `${label} incident`,
+        `${inc.title} (${severityName(inc.severity).toLowerCase()})`,
+      ]);
+    const orderId = snap.faults.orderAt.get(key);
+    const o = orderId !== undefined ? snap.workOrders.find((x) => x.id === orderId) : undefined;
+    if (o) {
+      const status =
+        o.status === 'queued'
+          ? 'waiting for a crew'
+          : o.status === 'enRoute'
+            ? 'crew on the way'
+            : 'crew on site';
+      rows.push([
+        `${label} work`,
+        `${o.type === 'repair' ? 'Repair' : maintenance.name}: ${status}`,
+      ]);
+      return;
+    }
+    const b = h(
+      'button',
+      {
+        class: 'small',
+        title: `${formatDuration(maintenance.minutes)} of work; takes it out of service while the crew is on site`,
+      },
+      `${maintenance.name}: ${label.toLowerCase()} (${formatMoney(maintenance.cost)})`,
+    );
+    const x = ref.layer === 'facility' ? -1 : ref.id % snap.world.width;
+    const y = ref.layer === 'facility' ? -1 : Math.floor(ref.id / snap.world.width);
+    b.addEventListener('click', () => {
+      const at =
+        ref.layer === 'facility'
+          ? (() => {
+              const bb = snap.buildingById.get(ref.id)!;
+              return { x: bb.x, y: bb.y };
+            })()
+          : { x, y };
+      this.actions.dispatch({
+        type: 'raiseMaintenance',
+        from: at,
+        to: at,
+        below: 101,
+        only: ref.layer,
+      });
+    });
+    this.buttons.push(b);
+  }
+
+  private tileAssetRows(snap: SimSnapshot, layer: TileAssetLayer, tile: number, rows: Row[]): void {
+    const w = snap.world;
+    const cls = tileClassAt(w, layer, tile);
+    if (!cls) return;
+    const c = w.condition[layer][tile]! / 100;
+    const risk = failureProbability(cls, c, snap.weather.event?.id ?? null);
+    this.assetRows(
+      snap,
+      { layer, id: tile },
+      LAYER_NAMES[layer],
+      c,
+      w.laid[layer][tile]!,
+      risk,
+      cls.maintenance,
+      rows,
+    );
+  }
+
+  private facilityAssetRows(snap: SimSnapshot, b: Building, rows: Row[]): void {
+    const fa = facilityAssetDef(b);
+    if (!fa) return;
+    const risk = failureProbability(fa.cls, b.condition, snap.weather.event?.id ?? null);
+    this.assetRows(
+      snap,
+      { layer: 'facility', id: b.id },
+      'Plant',
+      b.condition,
+      b.builtDay,
+      risk,
+      fa.cls.maintenance,
+      rows,
+    );
+    if (snap.faults.offline.has(b.id)) rows.push(['Service', 'Out of service']);
+  }
+
+  private depotRows(snap: SimSnapshot, b: Building, rows: Row[]): void {
+    const crews = snap.crews.filter((c) => c.depot === b.id);
+    rows.push(['Crews', `${crews.length}`]);
+    for (const c of crews) {
+      const status =
+        c.status === 'idle'
+          ? 'at the depot'
+          : c.status === 'enRoute'
+            ? 'on the way to a job'
+            : c.status === 'onSite'
+              ? 'on site'
+              : 'returning';
+      rows.push([crewLabel(c), status]);
+    }
+    const def = depotDefOf(b);
+    if (def) rows.push(['Cost to build', formatMoney(def.cost)]);
+    const near = snap.world.road;
+    const [fw, fd] = def?.footprint ?? [2, 2];
+    let road = false;
+    for (let yy = b.y - 1; yy <= b.y + fd && !road; yy++)
+      for (let xx = b.x - 1; xx <= b.x + fw; xx++) {
+        if (xx < 0 || yy < 0 || xx >= snap.world.width || yy >= snap.world.height) continue;
+        if (near[yy * snap.world.width + xx] !== 0) road = true;
+      }
+    if (!road) rows.push(['Access', 'No road beside it: crews drive off-road slowly']);
   }
 
   private coverageRows(snap: SimSnapshot, tile: number, rows: Row[]): void {
@@ -245,6 +421,11 @@ export class Inspector {
       this.waterRows(snap, b, def, rows);
       return def.name;
     }
+    if (def.utility === 'depot') {
+      this.depotRows(snap, b, rows);
+      return def.name;
+    }
+    this.facilityAssetRows(snap, b, rows);
     if (def.utility === 'water') {
       this.waterFacilityRows(snap, b, def, rows);
       return def.name;

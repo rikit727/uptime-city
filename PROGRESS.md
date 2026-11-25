@@ -9,7 +9,7 @@ Spec: `docs/BUILD_PROMPT.md`. Architecture: `ARCHITECTURE.md`. Conventions: `CLA
 | 1   | Scaffold, PWA, CI + Pages, grid, camera, roads, zoning, save/load      | **Done**    |
 | 2   | Sim core: time, seasons, weather, growth (incl. farms), power          | **Done**    |
 | 3   | Water, wastewater, pressure zones, irrigation                          | **Done**    |
-| 4   | Asset condition, incidents, crews, work orders                         | Not started |
+| 4   | Asset condition, incidents, crews, work orders                         | **Done**    |
 | 5   | Traffic, roadworks, permits                                            | Not started |
 | 6   | Services, landmarks, events, pollution, economy, happiness, complaints | Not started |
 | 7   | Overlays, dashboard, menus and settings, scenarios, UI polish          | Not started |
@@ -136,6 +136,59 @@ Spec: `docs/BUILD_PROMPT.md`. Architecture: `ARCHITECTURE.md`. Conventions: `CLA
   solve 2.1 ms (once per 5 ticks, never on the power tick), finish step 0.3 ms,
   average tick 0.64 ms.
 
+## Milestone 4: what exists
+
+- Data (`src/data/assets.json`): asset classes for the 3 road classes, 3 main
+  sizes and 2 line types (tile assets) and the 10 power/water facility kinds:
+  base decay, load decay, failure scale, weather multipliers (cold snap ×4 for
+  mains, ×2 for roads; storm ×3 for lines, ×2 for wind turbines), crew type,
+  repair and maintenance minutes and cost. Shared failure curve (0.003% a day
+  at 100 → 2% at 0). Incident kinds with base severity and SLA. Three depots
+  (highways, water, electricity; codes 400–402, 2 crews each).
+- State: Uint16 condition (×100) and laid-day layers plus Uint8 peak-load
+  layers per tile asset; facility condition, built day and peak load on
+  Building records; incidents, work orders, crews and KPIs. Save version 4
+  with a v3 → v4 migration (existing assets start at condition 100, laid on the
+  save's day).
+- Systems: `assets` (daily decay sweep, a slice of tiles per tick, load wear
+  from the water solve and power dispatch peaks, failure rolls with
+  `state.rng`) and `incidents` (crew arrivals, finished work, dispatch by
+  priority to the nearest free crew, storm overflow incident, impacts every 5
+  minutes: customers, priority customers, severity, SLA, customer-minutes).
+- Effects: a burst main leaks and passes no water on, so pressure falls
+  downstream until a crew isolates it (and closes the road over it); cable
+  faults and line work cut the line tile out of the power network; facility
+  faults and overhauls take the facility out of service; resurfacing closes the
+  road (closures are flags for M5 traffic).
+- Crews from depots drive the fastest road route by road speed (Dijkstra) with
+  off-road end legs, mobilise for 30 minutes, work on site and return; they can
+  be diverted. Repairs restore condition to 60 (and patch the road over a
+  main), maintenance to 100. MTTR, SLA met/missed and customer-minutes (today,
+  yesterday, all time) are tracked.
+- Commands: `raiseMaintenance` (area, condition threshold, optional crew type
+  or single asset), `setOrderPriority`, `assignCrew`, `cancelOrder` (refund),
+  `sendBottledWater` (water incidents with priority customers cut off).
+- Render/UI: crew vans, incident markers (taller and darker with severity),
+  barriers round work sites; 🛠 top-bar chip and incident inbox (`) with KPIs,
+  open incidents (severity, customers, SLA, crew status, priority and crew
+  pickers, bottled water), planned work (cancel), crews and recently closed
+  incidents; inspector rows for condition, age, failure risk, incident and work
+  per asset with one-click maintenance buttons; depot crew lists; Plan
+  maintenance tool (;) with a threshold bar ([ / ]); depot tools (Shift+1/2/3);
+  toasts; help text and controls list.
+- Tests (133, 20 new): failure curve, weather multipliers, decay with load and
+  peak-load reset, water solve recording utilisation, daily sweep coverage,
+  cold-snap burst rate, burst → incident → work order → crew → isolation →
+  repair → supply restored (with MTTR, customer-minutes, cost), no-crew warning,
+  cable fault cutting a substation's feed, facility fault, demolishing a burst
+  main, severity and bottled water, planned maintenance (threshold, isolation,
+  restore, cancel/refund, priorities), routing, determinism with failures and
+  repairs, save mid-repair continuing identically, v3 migration.
+- Measured on a 120×120 road grid with 64 substations and aged assets: the
+  assets and incidents systems average about 0.04 ms per tick; a cable fault or
+  its repair rebuilds the power network (about 2 ms on that grid), the only
+  spike; a crew route is under 1 ms.
+
 ## In progress
 
 Nothing.
@@ -166,41 +219,50 @@ Nothing.
 - Cities from v2 saves lose water (and slowly occupancy) until the player
   builds an intake and treatment works; the migration only lays mains.
 - A sewage works without power counts all its inflow as spill.
-- The toolbar now has 26 tools and scrolls on short screens; tidy in M7.
+- The toolbar now has 30 tools and scrolls on short screens; tidy in M7.
 - Running many days at once from the console stacks "Autosaved." toasts.
+- Bursts in the same water network each count all of that network's dry
+  customers (attribution by network, decision 50), so two bursts in one
+  network double-count in the inbox; city customer-minutes count each customer
+  once.
+- Road defects and closures have no effect yet beyond the incident: traffic and
+  permits use them in M5. Crews ignore closures.
+- No condition overlay yet (M7 overlays); condition shows in the inspector.
+- Repairs are paid even when cash is negative; there is no income until M6.
+- `rebuildNetwork` takes about 2 ms on a dense power grid and runs on every
+  cable fault and repair; make it incremental in M8 if it shows in profiles.
+- Crew numbers are fixed per depot (2); department budgets set them in M6.
+- Crew labels use global crew ids ("Water crew 3").
 - `npm audit` reports 4 moderate advisories in build-time dependencies
   (minimatch via vite-plugin-pwa/workbox-build). Nothing ships to the browser;
   recheck when upgrading.
 
 ## Exact next step
 
-Start **milestone 4** (asset condition, incidents, crews, work orders):
+Start **milestone 5** (traffic, roadworks, permits):
 
-1. Data: `src/data/assets.json` with asset classes for road segments (per
-   class), water mains (per size), power lines, substations, pumps (boosters,
-   intakes), treatment and sewage works and power plants: base decay per day,
-   load-dependent decay (traffic later, main utilisation and line loading
-   now), a failure curve (daily failure probability against condition), cold
-   snap burst multiplier for mains, repair crew type, repair duration, repair
-   cost. Update the "asset type" section of CLAUDE.md.
-2. State: condition (0–100) and age for tile assets (Uint8 condition layers for
-   roads, mains and lines, plus a laid-on day layer) and on facility Building
-   records. Bump the save version with a migration (existing assets start new
-   or at a configurable condition).
-3. Systems: daily decay (sliced across ticks, cursor in state) and failure
-   rolls with `state.rng`. A burst main removes the tile from the water network
-   (pressure downstream falls; add leakage to demand) and needs an excavation;
-   a cable fault cuts a line tile.
-4. Incidents with severity (priority customers raise it; offer a bottled water
-   response), customers affected and an SLA timer; work orders with priorities;
-   crew types (roads, water, power) based at depots (new facilities), limited
-   in number, travelling along roads (shortest path by road speed now,
-   congestion in M5) and spending time on site. Planned maintenance work orders
-   from the player. Track MTTR and customer-minutes lost.
-5. UI: incident inbox with the work order queue and crew assignment; inspector
-   condition rows; toasts.
-6. Tests: decay and failure curves, burst → incident → work order → crew
-   travels → repair → supply restored, cold snap burst rate, MTTR and
-   customer-minutes, determinism, save round-trip; update ARCHITECTURE.md
-   (tick order: asset decay and failures after water, before growth),
+1. Data: `src/data/traffic.json` with trip rates per zone and building
+   (residents, jobs), morning/evening peak curves, BPR parameters (α 0.15,
+   β 4), assignment interval, cosmetic car density; road capacities and speeds
+   already live in `roads.json`.
+2. Traffic model (`src/sim/traffic.ts`): trip generation per zone (aggregated
+   per road tile or per zone cluster), congestion-aware shortest paths with the
+   BPR volume/delay function, assignment recalculated periodically and sliced
+   across ticks (cursor saved, like the water solve). Save per-tile volume or
+   travel time as a layer so loads stay deterministic; write traffic load into
+   `world.peakLoad.road` so road wear starts to depend on traffic.
+3. Closures: `cache.faults.tile` already has `FAULT.ROAD_CLOSED` for
+   excavations and resurfacing; closed tiles lose capacity (lane closure) or
+   all of it and traffic re-routes. Crews should use congested travel times in
+   `routing.ts` (`legMinutes`).
+4. Roadworks: planned resurfacing exists (maintenance orders); add night works
+   (less disruption, more cost and time), lane vs full closure, and permits:
+   every work order needs a booked slot on its segment; clashes flagged;
+   combining works on the same segment (e.g. a main renewal and resurfacing)
+   avoids digging twice and is rewarded. Roadworks/permit calendar in the inbox.
+5. Render/UI: cosmetic cars sampled from flows (InstancedMesh), traffic overlay
+   (colour-blind-safe ramp), congestion index chip, closures and diversions.
+6. Tests: BPR delay, assignment determinism, a roadworks closure re-routing
+   traffic, permits clash/combine, crews slowed by congestion, save round-trip
+   mid-assignment; update ARCHITECTURE.md (tick order: traffic before assets),
    CLAUDE.md and this file.

@@ -479,3 +479,167 @@ table.controls td:first-child {
 .legend-marks span:last-child {
   transform: translateX(-100%);
 }
+
+/* ---- incident inbox ---- */
+.inbox {
+  position: absolute;
+  top: calc(var(--topbar-bottom, 54px) + 10px);
+  right: 10px;
+  width: 380px;
+  max-height: calc(100vh - var(--topbar-bottom, 54px) - 300px);
+  min-height: 200px;
+  overflow-y: auto;
+  padding: 10px 14px;
+}
+
+.inbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inbox h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.inbox h4 {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.inbox .close {
+  padding: 0 8px;
+  font-size: 18px;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  margin-top: 8px;
+}
+
+.kpi {
+  display: flex;
+  flex-direction: column;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi span {
+  font-size: 11px;
+}
+
+.incident,
+.order {
+  border-left: 4px solid var(--muted);
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.incident.sev-1 {
+  border-left-color: #fde725;
+}
+.incident.sev-2 {
+  border-left-color: #f68f46;
+}
+.incident.sev-3 {
+  border-left-color: #d0413e;
+}
+.incident.sev-4 {
+  border-left-color: #b3170f;
+}
+
+.incident-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.incident-title strong {
+  flex: 1;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #111;
+  background: var(--muted);
+}
+
+.badge.sev-1 {
+  background: #fde725;
+}
+.badge.sev-2 {
+  background: #f68f46;
+}
+.badge.sev-3 {
+  background: #d0413e;
+  color: #fff;
+}
+.badge.sev-4 {
+  background: #7a0403;
+  color: #fff;
+}
+
+.order-controls .row {
+  margin-top: 3px;
+}
+
+.inbox select,
+.order-controls select {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.inbox select option {
+  background: #22313d;
+}
+
+button.small {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.good {
+  color: var(--good);
+}
+
+.crews .crew {
+  padding-left: 10px;
+  font-size: 12px;
+}
+
+.closed {
+  font-size: 12px;
+}
+
+.inspector-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.topbar .chip.incidents {
+  cursor: pointer;
+}
+
+/* Keep toasts clear of the inbox while it is open. */
+.hud:has(.inbox:not(.hidden)) .toasts {
+  right: 400px;
+}

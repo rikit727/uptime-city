@@ -6,8 +6,9 @@ PWA and playable offline. No backend.
 
 Status: early development (see `PROGRESS.md`). Roads, zoning, seasons and
 weather, building growth (including farms and industrial estates), the power
-network, water supply with pressure zones, wastewater and irrigation, and
-save/load work today.
+network, water supply with pressure zones, wastewater and irrigation, asset
+condition and failures, incidents, work orders and repair crews, and save/load
+work today.
 
 ## Run locally
 
@@ -56,7 +57,8 @@ Press **H** in game for the full list. Highlights: WASD to pan, Q/E rotate,
 mouse wheel zoom, 1–3 roads, 4–8 zones, P/T power lines, U substation,
 N/L/V/M power stations and storage, J/K water mains, 9/0 intake and treatment
 works, -/= reservoir and water tower, C booster, Y sewage works, O water
-pressure overlay, B bulldoze, Space pause, Ctrl+S saves.
+pressure overlay, ; plan maintenance, Shift+1/2/3 depots, ` incident inbox,
+B bulldoze, Space pause, Ctrl+S saves.
 
 ## Docs
 
