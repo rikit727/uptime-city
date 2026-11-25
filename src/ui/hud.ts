@@ -9,8 +9,12 @@ import {
   GAME,
   TRAFFIC,
   ZONES,
+  cityEventDef,
   cityTotals,
+  dayOf,
   isOpen,
+  ledgerExpenses,
+  ledgerIncome,
   mttrMinutes,
   weatherEvent,
 } from '../sim';
@@ -19,6 +23,8 @@ import type { SlotId, SlotSummary } from '../platform/saves';
 import { clear, h } from './dom';
 import { formatGameTime, formatInt, formatMW, formatMoney, formatRealDate } from './format';
 import { LPS_PER_MLD, WATER } from '../sim';
+import { BudgetPanel } from './budget';
+import { CityPanel } from './cityPanel';
 import { Inbox, formatDuration } from './inbox';
 import { Inspector } from './inspector';
 import { Modal } from './modal';
@@ -70,7 +76,10 @@ export class Hud {
   readonly toasts = new Toasts();
   readonly inspector: Inspector;
   readonly inbox: Inbox;
+  readonly budget: BudgetPanel;
+  readonly cityPanel: CityPanel;
   private readonly modal: Modal;
+  private readonly happyEl = h('button', { class: 'chip happiness', title: 'Happiness' });
   private readonly incidentsEl = h('button', { class: 'chip incidents', title: 'Incidents' });
   private readonly thresholdBar = h('div', { class: 'density-bar threshold-bar hidden' });
   private readonly thresholdButtons = new Map<number, HTMLButtonElement>();
@@ -81,7 +90,7 @@ export class Hud {
     combine: HTMLButtonElement;
   };
   private readonly timeEl = h('span', { class: 'time' });
-  private readonly cashEl = h('span', { class: 'cash' });
+  private readonly cashEl = h('button', { class: 'cash', title: 'Budget (Shift+B)' });
   private readonly weatherEl = h('span', { class: 'chip weather' });
   private readonly powerEl = h('span', { class: 'chip power' });
   private readonly waterEl = h('button', { class: 'chip water', title: 'Water' });
@@ -117,6 +126,8 @@ export class Hud {
     };
     this.inspector = new Inspector(actions);
     this.inbox = new Inbox(actions);
+    this.budget = new BudgetPanel(actions);
+    this.cityPanel = new CityPanel(actions);
     this.modal = new Modal(() => this.closeModal());
     const topBar = this.buildTopBar();
     this.root = h(
@@ -129,6 +140,8 @@ export class Hud {
       this.trafficLegendEl,
       this.inspector.el,
       this.inbox.el,
+      this.budget.el,
+      this.cityPanel.el,
       this.toasts.el,
       this.modal.el,
     );
@@ -144,7 +157,9 @@ export class Hud {
   private buildTopBar(): HTMLElement {
     this.waterEl.addEventListener('click', () => this.actions.toggleOverlay('water'));
     this.trafficEl.addEventListener('click', () => this.actions.toggleOverlay('traffic'));
-    this.incidentsEl.addEventListener('click', () => this.inbox.toggle());
+    this.incidentsEl.addEventListener('click', () => this.togglePanel('inbox'));
+    this.cashEl.addEventListener('click', () => this.togglePanel('budget'));
+    this.happyEl.addEventListener('click', () => this.togglePanel('city'));
     const speeds = h('div', { class: 'speeds', role: 'group', 'aria-label': 'Game speed' });
     GAME.speeds.forEach((s, i) => {
       const b = h(
@@ -176,6 +191,7 @@ export class Hud {
       this.waterEl,
       this.trafficEl,
       this.incidentsEl,
+      this.happyEl,
       this.popEl,
       speeds,
       menu,
@@ -279,6 +295,8 @@ export class Hud {
       this.lastCash = snap.cash;
       this.cashEl.textContent = formatMoney(snap.cash);
       this.cashEl.classList.toggle('negative', snap.cash < 0);
+      const m = snap.economy.month;
+      this.cashEl.title = `This month: income ${formatMoney(ledgerIncome(m))}, spending ${formatMoney(ledgerExpenses(m))}\nClick for the budget (Shift+B)`;
     }
     if (Math.floor(snap.minute / 5) !== this.lastStatsMinute) {
       this.lastStatsMinute = Math.floor(snap.minute / 5);
@@ -290,6 +308,15 @@ export class Hud {
     }
     this.inspector.update(snap);
     this.inbox.update(snap);
+    this.budget.update(snap);
+    this.cityPanel.update(snap);
+  }
+
+  /** Open one side panel (closing the others), or close it if it is open. */
+  togglePanel(which: 'inbox' | 'budget' | 'city'): void {
+    const panels = { inbox: this.inbox, budget: this.budget, city: this.cityPanel };
+    const open = !panels[which].open;
+    for (const [k, p] of Object.entries(panels)) p.toggle(k === which ? open : false);
   }
 
   private updateChips(snap: SimSnapshot): void {
@@ -338,11 +365,34 @@ export class Hud {
     this.updateTrafficChip(snap);
     this.updateIncidentChip(snap);
 
+    this.updateHappinessChip(snap);
     const t = cityTotals(snap);
     this.popEl.textContent = `Pop ${formatInt(t.residents)} · Jobs ${formatInt(t.jobs)}`;
     const d = snap.demand;
     const pct = (v: number) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`;
     this.popEl.title = `Demand: residential ${pct(d.residential)}, commercial ${pct(d.commercial)}, office ${pct(d.office)}, industrial ${pct(d.industrial)}, agricultural ${pct(d.agricultural)}`;
+  }
+
+  private updateHappinessChip(snap: SimSnapshot): void {
+    const hp = snap.happiness;
+    const v = Math.round(hp.city);
+    const face = v >= 65 ? '😊' : v >= 45 ? '😐' : '☹️';
+    const residents = cityTotals(snap).residents;
+    this.happyEl.textContent = residents > 0 ? `${face} ${v}` : `${face} –`;
+    this.happyEl.classList.toggle('alert', residents > 0 && v < 40);
+    this.happyEl.classList.toggle('warn', residents > 0 && v >= 40 && v < 55);
+    const last = snap.complaints[snap.complaints.length - 1];
+    const next = snap.events
+      .filter((e) => e.status !== 'done')
+      .sort((a, b) => a.start - b.start)[0];
+    this.happyEl.title = [
+      `Happiness ${v} / 100`,
+      last ? `Latest complaint: ${last.text}` : 'No complaints',
+      next ? `Next event: ${cityEventDef(next.type).name}, day ${dayOf(next.start)}` : '',
+      'Click for the city panel: happiness, events and complaints (Shift+N)',
+    ]
+      .filter((x) => x !== '')
+      .join('\n');
   }
 
   private updateWaterChip(snap: SimSnapshot): void {
@@ -464,7 +514,7 @@ export class Hud {
       h(
         'p',
         {},
-        'You run the city day to day. Lay out roads, zone land, keep the lights on and the taps running: buildings only grow where there is power and water. Budgets and services arrive in later milestones.',
+        'You run the city day to day. Lay out roads, zone land, keep the lights on and the taps running: buildings only grow where there is power and water, and grow faster where land is valuable (good services, landmarks, the river, clean air).',
       ),
       h(
         'ol',
@@ -513,6 +563,26 @@ export class Hud {
           'li',
           {},
           'Watch the weather and seasons: solar needs sun, wind turbines need wind (but shut down in storms), and heatwaves and cold snaps push demand up. If supply runs short, outages roll round the city; industry is cut before homes.',
+        ),
+        h(
+          'li',
+          {},
+          'Services (Shift+4 to 0): fire, police, health and schools serve the homes their staff can reach quickly by road; each has a capacity. Fire engines drive through traffic to fires and draw water from the nearest main, which lowers the neighbours’ pressure. Waste depots collect bins and tip at recycling centres and landfill; missed bins bring complaints.',
+        ),
+        h(
+          'li',
+          {},
+          'Landmarks (Shift+S, C, H, U, E) bring jobs, rates and land value, and host events: match days, concerts, conferences, shopping weekends and graduations. Crowds jam the roads and load the power and water; arrange police, stewards, road closures and street cleaning in the city panel (Shift+N or the happiness chip).',
+        ),
+        h(
+          'li',
+          {},
+          'Money: homes pay council tax and businesses pay rates (more on valuable land); electricity and water are sold to customers; farms export. Plant, crews, gas and maintenance cost money, and licence breaches, spills and roadworks clashes or overruns are fined. Open the budget (Shift+B or click the cash) to set department budgets (crews on duty, service capacity, automatic maintenance), tax rates and loans. Accounts close every 30 days.',
+        ),
+        h(
+          'li',
+          {},
+          'Happiness (the face on the top bar) comes from services, reliable power and water, bin collections, commutes, clean air, taxes and the neighbourhood. Residents complain about real problems, street by street; unhappy cities stop attracting people.',
         ),
         h(
           'li',
@@ -644,6 +714,8 @@ function groupLabel(group: string): string {
       power: 'Power',
       water: 'Water',
       maintain: 'Maintenance',
+      services: 'Services',
+      landmarks: 'Landmarks',
       demolish: 'Demolish',
     }[group] ?? group
   );

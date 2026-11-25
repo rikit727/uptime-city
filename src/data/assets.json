@@ -16,7 +16,12 @@
   "maintenanceThresholds": [50, 70, 90],
   "resolvedKept": 30,
   "migrationCondition": 100,
-  "crews": { "mobiliseMinutes": 30, "offRoadKmh": 8, "roadSearchRadius": 3 },
+  "crews": {
+    "mobiliseMinutes": 30,
+    "mobiliseByType": { "fire": 2 },
+    "offRoadKmh": 8,
+    "roadSearchRadius": 3
+  },
   "bottledWater": { "cost": 2500 },
   "severity": {
     "names": ["", "Low", "Medium", "High", "Critical"],
@@ -29,7 +34,8 @@
     "cableFault": { "name": "Power cable fault", "severity": 2, "slaMinutes": 240 },
     "roadDefect": { "name": "Road surface failure", "severity": 1, "slaMinutes": 2880 },
     "facilityFault": { "name": "Equipment failure", "severity": 2, "slaMinutes": 720 },
-    "overflow": { "name": "Storm overflow", "severity": 2, "slaMinutes": 0 }
+    "overflow": { "name": "Storm overflow", "severity": 2, "slaMinutes": 0 },
+    "fire": { "name": "Building fire", "severity": 3, "slaMinutes": 60 }
   },
   "tileClasses": [
     {

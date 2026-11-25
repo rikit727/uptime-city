@@ -317,6 +317,7 @@
     },
     {
       "id": "retailPark",
+      "pollution": { "air": 0.2, "noise": 0.8 },
       "code": 21,
       "name": "Retail park",
       "category": "Retail park",
@@ -420,6 +421,7 @@
     },
     {
       "id": "departmentStore",
+      "pollution": { "air": 0, "noise": 0.5 },
       "code": 24,
       "name": "Department store",
       "category": "High-street shops",
@@ -638,6 +640,7 @@
     },
     {
       "id": "workshops",
+      "pollution": { "air": 0.6, "noise": 0.8 },
       "code": 60,
       "name": "Workshops",
       "category": "Light industry",
@@ -675,6 +678,7 @@
     },
     {
       "id": "warehouse",
+      "pollution": { "air": 0.5, "noise": 1.5 },
       "code": 61,
       "name": "Warehouse and logistics",
       "category": "Warehousing and logistics",
@@ -711,6 +715,7 @@
     },
     {
       "id": "lightFactory",
+      "pollution": { "air": 2, "noise": 1.5 },
       "code": 62,
       "name": "Light factory",
       "category": "Light industry",
@@ -758,6 +763,7 @@
     },
     {
       "id": "heavyIndustry",
+      "pollution": { "air": 6, "noise": 3 },
       "code": 63,
       "name": "Heavy industrial plant",
       "category": "Heavy industry",
@@ -813,6 +819,7 @@
     },
     {
       "id": "distributionCentre",
+      "pollution": { "air": 0.8, "noise": 2.5 },
       "code": 64,
       "name": "Distribution centre",
       "category": "Warehousing and logistics",
@@ -909,6 +916,7 @@
     },
     {
       "id": "livestockFarm",
+      "pollution": { "air": 1, "noise": 0.3 },
       "code": 81,
       "name": "Livestock farm",
       "category": "Livestock",

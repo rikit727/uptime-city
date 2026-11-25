@@ -12,8 +12,16 @@ import { createInitialState } from './state';
 import type { NewGameOptions, SimState } from './state';
 import { SYSTEMS } from './systems';
 import type { TickContext } from './systems';
+import { cityView } from './cityView';
+import type { CityView } from './cityView';
 import type {
   AssetsState,
+  CityEvent,
+  Complaint,
+  EconomyState,
+  Fire,
+  HappinessState,
+  ServicesState,
   Building,
   Crew,
   Estate,
@@ -82,6 +90,15 @@ export interface SimSnapshot {
   readonly traffic: Readonly<TrafficState>;
   readonly permits: readonly Permit[];
   readonly trafficCache: Readonly<TrafficCache>;
+  /** Economy (budgets, taxes, accounts, loans), service figures, fires, events, complaints. */
+  readonly economy: Readonly<EconomyState>;
+  readonly services: Readonly<ServicesState>;
+  readonly fires: readonly Fire[];
+  readonly events: readonly CityEvent[];
+  readonly complaints: readonly Complaint[];
+  readonly happiness: Readonly<HappinessState>;
+  /** Questions about the city (service levels, land value, pollution, ...). */
+  readonly city: CityView;
 }
 
 export class Simulation {
@@ -99,8 +116,10 @@ export class Simulation {
   readonly commandLog: LoggedCommand[] = [];
   private events: SimEvent[] = [];
   private readonly ctx: TickContext;
+  private readonly view: CityView;
 
   constructor(readonly state: SimState) {
+    this.view = cityView(state);
     this.ctx = {
       state,
       emit: (e) => this.events.push(e),
@@ -182,6 +201,13 @@ export class Simulation {
       traffic: s.traffic,
       permits: s.permits,
       trafficCache: s.cache.traffic,
+      economy: s.economy,
+      services: s.services,
+      fires: s.fires,
+      events: s.events,
+      complaints: s.complaints,
+      happiness: s.happiness,
+      city: this.view,
     };
   }
 

@@ -18,8 +18,10 @@
  * This module only reads crews and asset classes; incidents.ts creates and
  * finishes the work orders and calls in here.
  */
+import { addComplaint, streetName } from './complaints';
+import { spend } from './ledger';
 import { classOf } from './assets';
-import { TRAFFIC, roadClassByCode } from './data';
+import { ECONOMY, TRAFFIC, roadClassByCode } from './data';
 import { crewCount } from './crews';
 import type { SimEvent } from './events';
 import type { AssetRef, Permit, RoadClosure, SimState, WorkOrder } from './state';
@@ -148,8 +150,16 @@ export function createPermit(
   const other = state.cache.traffic.clashes.get(p.id);
   if (other && other.length > 0) {
     ts.kpi.clashes++;
+    spend(state, 'fines', ECONOMY.fines.permitClash);
     const w = state.world;
     const t = p.tiles[0] ?? 0;
+    addComplaint(
+      state,
+      'roadworks',
+      `clash:${p.id}`,
+      `Roadworks on ${streetName(w, t)} again! Why can't they dig it up once?`,
+      t,
+    );
     emit({
       type: 'permitClash',
       id: p.id,
@@ -235,6 +245,7 @@ export function checkOverruns(state: SimState, emit: Emit): boolean {
     if (p.overrun || state.minute <= p.end) continue;
     p.overrun = true;
     state.traffic.kpi.overruns++;
+    spend(state, 'fines', ECONOMY.fines.permitOverrun);
     const t = p.tiles[0] ?? 0;
     emit({ type: 'permitOverrun', id: p.id, x: t % w.width, y: Math.floor(t / w.width) });
     any = true;

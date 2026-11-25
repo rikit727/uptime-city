@@ -38,6 +38,18 @@ src/
                      road segments, derived travel times, commute times, road wear from flows
     roadworks.ts     Street works permits: booking (now / night, lane or full closure), clashes,
                      combining works, dispatch gating, overruns
+    services.ts      Public services: coverage by road travel time, capacity ratios, service
+                     levels, waste collection, recycling and landfill, crews housed per building
+    fire.ts          Building fires: ignition, growth, fire engines, hydrant draw, damage
+    cityEvents.ts    Events calendar at landmarks: booking, crowd windows, event trips, loads,
+                     road closures, preparations, outcomes
+    pollution.ts     Air and noise grids (hourly, spread), land value
+    economy.ts       Taxes, tariffs, running costs, budgets (crews on duty, auto maintenance),
+                     monthly accounts, loans
+    ledger.ts        Cash in and out on lines of the month's accounts; budget decay factor
+    happiness.ts     The residents round (taxes and happiness, sliced), hourly complaint checks
+    complaints.ts    Street names and the complaints feed
+    cityView.ts      Read-only city questions for the UI (service levels, land value, ...)
     cache.ts         rebuildCache(): derived indexes recomputed from saved state
     events.ts        SimEvent union (notifications out of the sim)
     serialize.ts     SimState <-> JSON body (RLE tile layers)
@@ -45,7 +57,8 @@ src/
     commands/        One file per command family: plan (pure) + apply (mutate)
                      (roads, zoning, bulldoze, facilities: power, water and depots, power lines,
                      water mains, assets: maintenance with permits, work order priority, crews,
-                     bottled water, combining permits)
+                     bottled water, combining permits, budgets, tax rates, loans, event
+                     preparations)
     systems/         Per-tick systems and the tick order (systems/index.ts)
   render/          Three.js only. Reads SimSnapshot; never mutates the sim.
     renderer.ts      GameRenderer: scene, layers, picking, invalidate()
@@ -60,6 +73,8 @@ src/
     hud.ts           Top bar, toolbar, status line, modals (saves, help, new game)
     inspector.ts     Tile inspector (incl. asset condition and maintenance buttons)
     inbox.ts         Incident inbox: incidents, work orders, roadworks/permit calendar, crews, KPIs
+    budget.ts        Budget panel: accounts, department budgets, tax rates, loans, backlog
+    cityPanel.ts     City panel: happiness factors, events calendar and preparations, complaints
     tools.ts         Toolbar tool definitions and shortcuts (data)
     shortcuts.ts     Controls list for the help panel
     toasts.ts, modal.ts, dom.ts, format.ts, styles.css
@@ -75,7 +90,9 @@ src/
     settings.ts      localStorage settings
     pwa.ts           Service worker registration
   data/            JSON content: game.json, roads.json, zones.json, weather.json,
-                   buildings.json, power.json, water.json, growth.json, assets.json, traffic.json
+                   buildings.json, power.json, water.json, growth.json, assets.json, traffic.json,
+                   services.json (services, landmarks, events, fire), economy.json, city.json
+                   (pollution, land value, happiness, complaints, street names)
 tests/             Vitest, mirroring src/ (sim/, platform/, app/)
 scripts/gen-icons.mjs  Generates PWA icons from code
 ```
@@ -150,10 +167,20 @@ applied immediately and logged at the current tick, i.e. before the next tick.
 | 6   | traffic   | 5         | Tick % 15 = 1 starts a round (trip table fixed); origin cells within `nodesPerTick` per tick; finish: blend   |
 | 7   | assets    | 4         | Every tick: decay sweep of `ceil(tiles / 1440)` tiles (cursor saved): condition loss, failure rolls           |
 | 8   | incidents | 4         | Every tick: crew arrivals, finished work, dispatch (permit slots), overflow, overruns. Tick % 5 = 4: impacts  |
-| 9   | growth    | 2         | Every tick: scan `scanTilesPerTick` tiles and maybe add buildings (commute factor). Hourly: occupancy         |
+| 9   | fire      | 6         | :33 each hour: ignition roll. Every tick while fires burn: engines on site, growth/suppression, end of fires  |
+| 10  | events    | 6         | Midnight: book events at landmarks. Every tick: crowd windows open/close (road closures), outcomes            |
+| 11  | services  | 6         | :07 each hour: capacity ratios (and land value services). 07:17: waste collection, recycling, landfill, bins  |
+| 12  | growth    | 2         | Every tick: scan `scanTilesPerTick` tiles and maybe add buildings (commute, land value). Hourly: occupancy    |
+| 13  | pollution | 6         | :03 each hour: air and noise grids                                                                            |
+| 14  | economy   | 6         | Month start: loans, file accounts. :51: tariffs, fuel, upkeep, wages, crews on duty. 01:30: auto maintenance  |
+| 15  | happiness | 6         | From :10 each hour: residents round (300 buildings per tick: taxes, happiness). :44: complaint checks         |
 
-Planned order (add rows as systems land): services → (growth) → pollution →
-economy (daily/monthly) → happiness/complaints.
+The hourly M6 steps sit on different minutes, clear of the power dispatch ticks
+(minute % 5 = 0), so no single tick carries two of them. Fire runs after
+incidents so an engine that arrives this tick fights the fire this tick. Events
+run before services so the morning collection sees yesterday's event litter.
+Pollution reads only saved state (gas stations by rating, not dispatch output,
+which is not saved).
 
 Weather runs straight after the clock so every later system sees this
 minute's weather. Power runs before water (pumps and works need power; water
@@ -226,7 +253,8 @@ last water figures (UI only: flows, uses, city stats), and the fault cache
 incident / work order indexes) derived from open incidents and on-site work, and
 the traffic cache (`rebuildTraffic()`: road segments, travel times and capacities
 from the saved flows and closures, crew slow-down factors, permit clashes, building
-access tiles). `rebuildFaults()` refreshes the travel times, so closures take effect
+access tiles), and the services cache (`rebuildServices()`: coverage minutes and nearest
+facility per road tile, served shares, landmarks, land value parts). `rebuildFaults()` refreshes the travel times, so closures take effect
 at once. `rebuildCache()` runs
 on new game and on load; commands call `rebuildEstates()` / `rebuildNetwork()`
 when they change zoning, lines or facilities. Everything in it must be a pure
@@ -401,6 +429,87 @@ job`. A crew is not sent before `start`. The permit ends when its last order is
   The `combinePermits` command merges a clashing permit into another on the same
   street (planned works refunded 25%).
 
+### Services (milestone 6)
+
+Data lives in `services.json`. Fire stations, police stations, health centres,
+schools, waste depots, recycling centres and landfill sites are facilities
+(codes 500+, `utility: 'service'`); landmarks are too (stadium, shopping centre,
+hospital, university, conference and events centre, codes 510+). They draw power
+and water as customers (their `zone` picks the demand curve; the hospital is a
+priority customer), pay no zone taxes, and have upkeep and jobs.
+
+- **Coverage** (`cache.services`, derived): one multi-source search per service
+  kind over the road network by free-flow time from the roads around every
+  facility of that kind, bounded at `maxMinutes`, gives each road tile the
+  minutes to the nearest facility and its id. A building uses its traffic access
+  tile. Quality falls from 1 within `goodMinutes` to 0 at `maxMinutes`. Rebuilt
+  when roads or service facilities change.
+- **Capacity** (saved hourly in `services.ratios`): each police station, health
+  centre or hospital, school and waste depot serves the buildings whose nearest
+  facility it is (residents, pupils, tonnes); ratio = capacity × services budget ÷
+  load, capped at 1. Service level = quality × ratio × (½ while the facility has
+  no power or water).
+- **Waste** (daily 07:17): tonnes produced by residents and jobs (plus event
+  litter) are collected by depots up to their capacity, recycling centres take the
+  recyclable share, the rest goes to landfill until it is full (`services.landfill`
+  tonnes per site). `services.tipping` is the share that could be tipped. A
+  building's bins are missed when out of reach or beyond its depot's ratio ×
+  tipping (by a fixed hash of its id, so it is a pure function).
+- **Fire** (`fire.ts`): see the module header. Fire engines are crews of type
+  `fire` at fire stations (mobilise in 2 minutes); each fire gets one
+  `firefighting` work order per appliance needed. Engines park on the access road
+  (closed while they work) and draw `hydrantLps` each from the nearest main
+  (water.ts adds it to that network's demand, so neighbours' pressure falls).
+  Suppression scales with the hydrant pressure (or tank water only).
+
+### Events calendar
+
+See `cityEvents.ts`. Each landmark lists the event types it hosts. Events are
+booked at midnight (`state.events`), live during their crowd window, add
+`eventIn` / `eventOut` trips to the traffic round (homes → venue before, venue →
+homes after), multiply the venue's power and water load while on, add crowd
+noise, and are judged at the end: crowd trouble if `crowdRisk × (1 − police)`
+exceeds 0.3 (police = the local station's level, or 1 with extra policing; road
+closures halve the risk), litter unless street cleaning was booked, and a levy
+per attendee. Preparations (`prepareEvent`) are booked and paid while the event
+is booked; road closures are fault bits derived from live events in
+`rebuildFaults`.
+
+### Pollution and land value
+
+Hourly (`pollution.ts`): sources summed per 4×4-tile cell (buildings with
+`pollution` emissions × occupancy, gas stations in service by rating, sewage
+works, landfill and recycling, traffic flows and highways, fires, live events),
+spread with a separable exponential falloff, saved ×10 as Uint16 grids (32×32 on
+a 128 map). Tiles sample bilinearly. Land value = base + services score of the
+road it is served from (cached per road tile) + river and landmark lift (cached
+per tile from the layout) − air and noise penalties.
+
+### Economy
+
+See `economy.ts`. All cash changes outside command costs go through `ledger.ts`
+(`spend`, `earn`) onto the month's ledger lines; `executeCommand` books command
+costs by command type (capital, maintenance, services). Taxes are collected
+hourly in the residents round; tariffs (electricity MWh served, water Ml supplied,
+metered by the dispatch and the solve), gas, upkeep and crew wages are settled at
+:51. Department budgets (50–150%) scale upkeep and service capacity, set crews on
+duty (`round(crews × level)`, at least 1; extra crews stand down when idle), fund
+a daily automatic maintenance allowance (night works on the worst assets below
+45%), and below 100% multiply asset decay. Fines: licence breach, spills per Ml,
+permit clashes and overruns. Loans are annuities, paid monthly with interest.
+
+### Happiness and complaints
+
+Each hour the residents round (`happiness.ts`) visits every building in id order,
+300 per tick, collecting an hour of its taxes and adding each home's weighted
+factors (services, utilities, bins, commute, pollution, council tax, land value)
+to saved partial sums; the city figure is published at the end, less a point per
+complaint in the last day. It scales residential demand. Complaints are made from
+real events: long outages per incident (at 3/6/12/24 hours for water, 2/4/8/16
+for power), low pressure, power cuts, fumes, noise, missing school places, jams,
+missed bins, fires, roadworks clashes and events, with the street named. Each
+has a key and a cooldown, and the feed keeps the newest 40.
+
 ### Weather model
 
 Seasonal means in `weather.json` are interpolated with cosine easing between
@@ -420,7 +529,7 @@ Saves are JSON (`platform/saveFormat.ts`), stored in IndexedDB database
 ```jsonc
 {
   "format": "uptime-city-save",
-  "version": 5,
+  "version": 6,
   "meta": { "gameName", "label", "savedAt", "day", "minute", "cash", "seed" },
   "state": {
     "seed": 123, "tick": 0, "minute": 360, "rngState": 987654, "cash": 250000,
@@ -456,7 +565,20 @@ Saves are JSON (`platform/saveFormat.ts`), stored in IndexedDB database
                  "nextPermitId": 7, "kpi": { "permits": 6, "clashes": 1, "combined": 2, ... } },
     "permits": [{ "id": 6, "kind": "planned", "tiles": [...], "start": 9840, "end": 10500,
                   "night": true, "closure": "full", "orders": [12, 13], "overrun": false,
-                  "combined": true, "dug": [] }]
+                  "combined": true, "dug": [] }],
+    "economy": { "budgets": { "roads": 1, ... }, "taxRates": { "residential": 1, ... },
+                 "month": { "income": {...}, "expenses": {...}, "borrowed": 0, "repaid": 0 },
+                 "lastMonth": null, "history": [...], "meter": {...}, "loans": [...], "nextLoanId": 1 },
+    "services": { "ratios": [[7, 1]], "tipping": 1, "landfill": [[11, 17.1]], "waste": {...},
+                  "fireKpi": {...}, "nextFireId": 1, "nextEventId": 3, "nextComplaintId": 5 },
+    "fires": [{ "id": 1, "building": 40, "tile": 2580, "hydrant": 2452, "intensity": 31.5, ... }],
+    "events": [{ "id": 2, "type": "match", "venue": 12, "start": 3780, "end": 3900,
+                 "attendance": 16095, "measures": ["policing"], "status": "booked", ... }],
+    "complaints": [{ "id": 4, "minute": 2650, "kind": "water", "text": "No water on ...",
+                     "tile": 2580, "key": "out:3:3" }],
+    "happiness": { "city": 72.5, "factors": {...}, "complaintPenalty": 1, "cursor": -1,
+                   "sumWeight": 0, "sumScore": 0, "sumFactors": {...} },
+    "pollution": { "air": [...], "noise": [...] }                          // RLE, Uint16 ×10
   }
 }
 ```
@@ -466,14 +588,18 @@ Version history: 1 = milestone 1 (terrain, roads, zones); 2 = milestone 2
 (water and pressure layers, building `storedMl`/`dryMinutes`, water state); 4 =
 milestone 4 (asset condition/laid/peak-load layers, building condition, built day
 and peak load, asset state, incidents, work orders, crews); 5 = milestone 5 (traffic
-layer, traffic state and trip table, permits, work order closure/night/permit/combined).
+layer, traffic state and trip table, permits, work order closure/night/permit/combined); 6 =
+milestone 6 (economy, services, fires, events, complaints, happiness, pollution, `rules.fires`,
+event trip purposes).
 The v1 → v2 migration adds empty buildings and lines and default weather. The
 v2 → v3 migration lays a distribution main under every existing road and adds
 zeroed water fields. The v3 → v4 migration gives every existing asset
 `assets.json: migrationCondition` (100), laid on the save's day, and empty
 incidents, orders and crews. The v4 → v5 migration adds zero flows, an idle traffic
 state and no permits; existing work orders on roads keep a full closure without a
-permit.
+permit. The v5 → v6 migration adds full budgets and standard tax rates, empty
+accounts, services, fires, events and complaints, zero happiness and pollution,
+random fires on, and empty event trips in the traffic round.
 
 - To change the state shape: bump `CURRENT_SAVE_VERSION` and add
   `MIGRATIONS[oldVersion]` that returns the next version. Migrations run in
@@ -530,7 +656,7 @@ permit.
 5. **Traffic and roadworks** — trip generation, BPR assignment sliced across
    ticks, cosmetic cars, closures, planned/reactive roadworks, permits. **Done.**
 6. **Services and economy** — fire/hydrants, police, health, schools, waste,
-   landmarks, events calendar, pollution, budgets, loans, happiness, complaints.
+   landmarks, events calendar, pollution, budgets, loans, happiness, complaints. **Done.**
 7. **UI** — overlays, KPI dashboard, menus and settings, scenarios, polish.
 8. **Performance and docs** — profiling pass, final documentation review.
 
@@ -606,3 +732,18 @@ permit.
 | 66  | M5        | Overlays are exclusive (water or traffic); O cycles them                                                                     | Every letter key was taken; one cycling key scales to the M7 overlay switcher.                                          |
 | 67  | M5        | Crews pay congestion (BPR factor capped at 4×) but not closures                                                              | Spec: congestion slows crews. Capping avoids absurd times on gridlocked tiles.                                          |
 | 68  | M5        | Growth's spawn chance falls from 100% to 25% as a cell's mean commute rises from 15 to 40 minutes                            | Spec: growth depends on commute times; a soft factor avoids hard cut-offs.                                              |
+| 69  | M6        | Service coverage uses free-flow road times (derived, rebuilt with roads and facilities), not congested times                 | Coverage must be a pure function of saved state; congested times change every round and would need saving per kind.     |
+| 70  | M6        | Capacity is shared per facility by nearest-facility catchments; ratios saved hourly                                          | Overloaded stations matter locally without an allocation solver; saving the ratios keeps loads deterministic.           |
+| 71  | M6        | Fire engines are crews (type `fire`) on `firefighting` work orders; fire.ts finishes them                                    | Reuses dispatch, routing through traffic, rendering and the inbox; one order per appliance.                             |
+| 72  | M6        | Firefighting draws from the nearest main as extra network demand; suppression scales with that main's pressure               | The spec's hydrant mechanic falls out of the existing friction-loss solve; neighbours' pressure drops visibly.          |
+| 73  | M6        | Random fires only start in grown buildings; landmarks can burn (scenarios) but are gutted, not removed                       | Removing facilities mid-sim needs crew and layout clean-up; scenarios in M7 start fires directly.                       |
+| 74  | M6        | Event crowds are two trip purposes (eventIn, eventOut) in the normal traffic round                                           | A dedicated purpose sends every trip to the venue under the gravity model; no extra assignment machinery.               |
+| 75  | M6        | Event outcomes are rule-based (police level, preparations), not random                                                       | Predictable cause and effect for the player; no extra RNG draws.                                                        |
+| 76  | M6        | Pollution on a 4×4-tile grid, saved; exponential falloff along rows and columns                                              | Small saves (1,024 values per kind), O(n) spreading, smooth enough for 100 m cells.                                     |
+| 77  | M6        | Land value is computed on demand from cached layout parts and saved grids                                                    | Pure function of saved state; O(1) per lookup for taxes, growth and happiness.                                          |
+| 78  | M6        | Taxes and happiness are collected in one residents round sliced 300 buildings per tick, partial sums saved                   | A full map takes ~15 ms in one go; slicing keeps every tick under 1 ms.                                                 |
+| 79  | M6        | Income settles hourly into cash; the month's ledger is filed every 30 days                                                   | Cash moves smoothly; 30-day months match the season length.                                                             |
+| 80  | M6        | Department budgets set crews on duty, service capacity, an automatic maintenance allowance and decay speed                   | Gives the spec's "sets crew numbers and the maintenance backlog" concrete, visible effects.                             |
+| 81  | M6        | Bins missed by a fixed hash of the building id against the depot's ratio × tipping share                                     | Deterministic partial collection without saving per-building flags.                                                     |
+| 82  | M6        | Street names hash the straight run of road a tile is on                                                                      | Stable names along a street, through junctions, with no saved naming state.                                             |
+| 83  | M6        | Services must have water and power like businesses; without them they serve at half strength                                 | Ties services to the utilities, the game's core.                                                                        |

@@ -10,7 +10,7 @@ import {
 } from '../../src/platform/saveFormat';
 import { rleDecode, rleEncode } from '../../src/sim/serialize';
 import { Simulation } from '../../src/sim/simulation';
-import { waterSupplyCommands } from '../sim/helpers';
+import { poweredTown, testSim, waterSupplyCommands } from '../sim/helpers';
 
 function playedSim(): Simulation {
   const sim = Simulation.newGame({ seed: 555 });
@@ -318,6 +318,48 @@ describe('migrations', () => {
     expect(s.world.traffic.every((v) => v === 0)).toBe(true);
     expect(s.cache.traffic.segmentAt[128 * 20 + 5]).toBeGreaterThan(0);
     sim.step(60);
+  });
+
+  it('upgrades a version 5 save (milestone 5): economy, services, events, city state', () => {
+    // A current save stripped back to its version 5 shape.
+    const sim = testSim();
+    poweredTown(sim);
+    sim.step(30);
+    const cur = createSaveFile(sim, 'v5') as unknown as {
+      version: number;
+      state: Record<string, unknown>;
+    };
+    const st = { ...cur.state };
+    for (const k of [
+      'economy',
+      'services',
+      'fires',
+      'events',
+      'complaints',
+      'happiness',
+      'pollution',
+    ])
+      delete st[k];
+    st.rules = { weatherEvents: true };
+    const traffic = st.traffic as {
+      table: { prod: Record<string, unknown>; attr: Record<string, unknown> };
+    };
+    for (const part of [traffic.table.prod, traffic.table.attr]) {
+      delete part.eventIn;
+      delete part.eventOut;
+    }
+    const save = parseSaveFile(JSON.stringify({ ...cur, version: 5, state: st }));
+    expect(save.version).toBe(CURRENT_SAVE_VERSION);
+    const loaded = simulationFromSave(save);
+    const s = loaded.state;
+    expect(s.rules.fires).toBe(true);
+    expect(s.economy.budgets.water).toBe(1);
+    expect(s.economy.taxRates.residential).toBe(1);
+    expect(s.events).toEqual([]);
+    expect(s.happiness.cursor).toBe(-1);
+    expect(s.pollution.air.length).toBe(32 * 32);
+    expect(s.cash).toBe(sim.state.cash);
+    loaded.step(120);
   });
 
   it('runs each step in order up to the target version', () => {

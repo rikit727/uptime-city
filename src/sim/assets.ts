@@ -6,7 +6,7 @@
  * point in `world.condition`; facilities keep it on their Building record.
  */
 import { ASSETS, buildingDef, facilityAssetClass, tileAssetClass } from './data';
-import type { AnyFacilityDef, FacilityAssetClass, GrownBuildingDef, TileAssetClass } from './data';
+import type { AnyFacilityDef, CustomerDef, FacilityAssetClass, TileAssetClass } from './data';
 import type { AssetRef, Building, SimState } from './state';
 import { DAYS_PER_YEAR, dayOf } from './time';
 import type { CrewType, TileAssetLayer, WeatherEventId } from './types';
@@ -143,7 +143,7 @@ export function conditionBand(c: number): string {
  * Customers a building counts for in incidents and customer-minutes: households
  * for homes (residents / household size, at least 1), one for anything else.
  */
-export function customersOf(b: Building, def: GrownBuildingDef): number {
+export function customersOf(b: Building, def: CustomerDef): number {
   if (def.residents <= 0) return 1;
   return Math.max(1, Math.round((def.residents * b.occupancy) / ASSETS.householdSize));
 }

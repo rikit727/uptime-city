@@ -32,6 +32,17 @@ export const CONTROL_ROWS: readonly ShortcutRow[] = [
   },
   { keys: 'Shift+1 / 2 / 3', action: 'Highways / water / electricity depot' },
   { keys: '`', action: 'Incident inbox: incidents, work orders, roadworks permits and crews' },
+  {
+    keys: 'Shift+4 – 0',
+    action:
+      'Fire station, police station, health centre, school, waste depot, recycling centre, landfill',
+  },
+  {
+    keys: 'Shift+S / C / H / U / E',
+    action: 'Stadium, shopping centre, hospital, university, conference and events centre',
+  },
+  { keys: 'Shift+B', action: 'Budget: accounts, department budgets, taxes and loans' },
+  { keys: 'Shift+N', action: 'City panel: happiness, events calendar and complaints' },
   { keys: 'B', action: 'Bulldoze' },
   { keys: 'Esc', action: 'Cancel drag, close panel, or back to Inspect' },
   { keys: 'Space', action: 'Pause / resume' },

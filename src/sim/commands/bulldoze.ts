@@ -1,3 +1,4 @@
+import { crewSpecOf, rebuildServices } from '../services';
 import { removeBuildings } from '../buildings';
 import { POWER, ROADS, WATER } from '../data';
 import { rebuildEstates } from '../estates';
@@ -5,7 +6,6 @@ import { rectTiles } from '../geometry';
 import { rebuildNetwork } from '../power';
 import type { SimState } from '../state';
 import { clearTileAsset } from '../assets';
-import { depotDefOf } from '../crews';
 import { rebuildFaults, removeDepotCrews, retireAsset } from '../incidents';
 import { TILE_ASSET_LAYERS } from '../types';
 import { assetCodeLayer } from '../world';
@@ -60,7 +60,7 @@ export function applyBulldoze(state: SimState, _cmd: BulldozeCommand, plan: Comm
     const b = state.cache.byId.get(id);
     if (!b) continue;
     retireAsset(state, { layer: 'facility', id });
-    if (depotDefOf(b)) removeDepotCrews(state, id);
+    if (crewSpecOf(b)) removeDepotCrews(state, id);
   }
   for (const i of plan.affected) {
     for (const layer of TILE_ASSET_LAYERS) {
@@ -84,4 +84,5 @@ export function applyBulldoze(state: SimState, _cmd: BulldozeCommand, plan: Comm
   rebuildNetwork(state);
   rebuildWater(state);
   rebuildTraffic(state);
+  rebuildServices(state);
 }

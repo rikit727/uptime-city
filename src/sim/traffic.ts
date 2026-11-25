@@ -27,6 +27,7 @@
 import { FAULT } from './assets';
 import { GAME, TRAFFIC, TRIP_PURPOSES, buildingDef, roadClassByCode } from './data';
 import type { TripPurpose } from './data';
+import { eventTrips } from './cityEvents';
 import { rebuildClashes } from './roadworks';
 import { emptyTripTable, trafficCellsAcross } from './state';
 import type { SimState, TripTable } from './state';
@@ -180,7 +181,7 @@ export function buildCellTable(state: SimState, hour: number): TripTable {
       j = Math.round(def.jobs * b.occupancy);
       zone = def.zone;
       if (zone === 'agricultural') farm = b.occupancy;
-    }
+    } else if (def.utility === 'service' && def.zone === 'commercial') zone = 'commercial';
     if (res + j + farm <= 0) continue;
     let t = access.get(b.id);
     if (t === undefined) {
@@ -230,6 +231,27 @@ export function buildCellTable(state: SimState, hour: number): TripTable {
     attr.freight[c] = attr.outbound[c]!;
     prod.farm[c] = farms[c]! * tr.farmTripsPerFarm * TRAFFIC.pcu.farm * share('farm');
     attr.farm[c] = attr.outbound[c]!;
+  }
+  // Crowds to and from events: from homes to the venue before, back home after.
+  for (const ev of eventTrips(state, hour)) {
+    const v = state.cache.byId.get(ev.venue);
+    const vdef = v ? buildingDef(v.code) : undefined;
+    if (!v || !vdef) continue;
+    let t = access.get(v.id);
+    if (t === undefined) {
+      t = accessTile(w, v.x, v.y, vdef.footprint[0], vdef.footprint[1]);
+      access.set(v.id, t);
+    }
+    if (t < 0) continue;
+    const vc = cellOfTile(w, t);
+    if (load[vc]! < 0) table.load[vc] = t;
+    attr.eventIn[vc] = attr.eventIn[vc]! + ev.in;
+    prod.eventOut[vc] = prod.eventOut[vc]! + ev.out;
+    for (let c = 0; c < cells; c++) {
+      if (residents <= 0 || homes[c]! <= 0 || table.load[c]! < 0) continue;
+      prod.eventIn[c] = prod.eventIn[c]! + (ev.in * homes[c]!) / residents;
+      if (ev.out > 0) attr.eventOut[c] = homes[c]!;
+    }
   }
   const r2 = (v: number) => Math.round(v * 100) / 100;
   for (const p of TRIP_PURPOSES) {
@@ -411,7 +433,14 @@ export function assignOrigin(state: SimState, origin: number): number {
   const tau = TRAFFIC.deterrenceMinutes;
   // Gravity weights over reachable destination cells.
   const reach = new Float64Array(cells);
-  const sums: Record<TripPurpose, number> = { outbound: 0, return: 0, freight: 0, farm: 0 };
+  const sums: Record<TripPurpose, number> = {
+    outbound: 0,
+    return: 0,
+    freight: 0,
+    farm: 0,
+    eventIn: 0,
+    eventOut: 0,
+  };
   for (let j = 0; j < cells; j++) {
     const d = table.load[j]!;
     if (j === origin || d < 0 || done[d] !== stamp) continue;

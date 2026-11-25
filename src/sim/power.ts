@@ -17,7 +17,14 @@
  */
 import { FAULT } from './assets';
 import { POWER, buildingDef } from './data';
-import type { BuildingDef, FacilityDef, GrownBuildingDef, WaterFacilityDef } from './data';
+import type {
+  BuildingDef,
+  FacilityDef,
+  GrownBuildingDef,
+  ServiceFacilityDef,
+  WaterFacilityDef,
+} from './data';
+import { eventLoadFactor } from './cityEvents';
 import { centreOf, defOf, residentsOf } from './buildings';
 import type { SimEvent } from './events';
 import type { Building, PowerIsland, PowerStats, SimState } from './state';
@@ -30,11 +37,15 @@ const facilityDefOf = (b: Building): FacilityDef | undefined => {
   return def.role === 'facility' && def.utility === 'power' ? def : undefined;
 };
 
-/** Buildings that draw power: grown buildings and water facilities with pumps. */
+/** Buildings that draw power: grown buildings, services and water facilities with pumps. */
 const consumerDef = (
   def: BuildingDef | undefined,
-): GrownBuildingDef | WaterFacilityDef | undefined =>
-  def?.role === 'grown' || (def?.utility === 'water' && def.powerKw > 0) ? def : undefined;
+): GrownBuildingDef | WaterFacilityDef | ServiceFacilityDef | undefined =>
+  def?.role === 'grown' ||
+  (def?.utility === 'water' && def.powerKw > 0) ||
+  (def?.utility === 'service' && def.powerKw > 0)
+    ? def
+    : undefined;
 
 const isGenerator = (def: FacilityDef): boolean =>
   def.kind === 'gas' || def.kind === 'solar' || def.kind === 'wind' || def.kind === 'battery';
@@ -262,7 +273,9 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
     const kw =
       def.role === 'grown'
         ? def.powerKw * zoneFactor[def.zone] * (vacant + (1 - vacant) * b.occupancy)
-        : def.powerKw;
+        : def.utility === 'service'
+          ? def.powerKw * zoneFactor[def.zone] * eventLoadFactor(state, b).power
+          : def.powerKw;
     cache.loadKw.set(b.id, kw);
     stats.demandMW += kw / 1000;
     const tile =
@@ -382,6 +395,8 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
     stats.capacityMW += isl.generationMW;
     stats.availableMW += available;
     stats.servedMW += servedMW;
+    state.economy.meter.electricityMWh += servedMW * dtH;
+    state.economy.meter.gasMWh += gasTotal * dtH;
     stats.renewableMW += renewTotal;
     stats.storedMWh += stored;
     stats.islands.push({

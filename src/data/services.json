@@ -1,0 +1,977 @@
+{
+  "//": "Public services and landmarks. Facility codes share the building code space (500+ here). Never renumber or reuse codes. capacity: police and health = residents served, school = pupils, waste depot = tonnes collected a day, recycling = tonnes a day, landfill = tonnes in total, landmarks = attendance or visitors at an event. zone = demand curve used for power and water. Coverage is measured by free-flow road travel time from the facility's access roads: full within goodMinutes, falling to nothing at maxMinutes.",
+  "coverage": {
+    "fire": {
+      "goodMinutes": 3,
+      "maxMinutes": 8
+    },
+    "police": {
+      "goodMinutes": 4,
+      "maxMinutes": 10
+    },
+    "health": {
+      "goodMinutes": 5,
+      "maxMinutes": 12
+    },
+    "school": {
+      "goodMinutes": 4,
+      "maxMinutes": 10
+    },
+    "waste": {
+      "goodMinutes": 6,
+      "maxMinutes": 15
+    }
+  },
+  "pupilsPerResident": 0.14,
+  "unpoweredServiceFactor": 0.5,
+  "waste": {
+    "collectionHour": 7,
+    "tonnesPerResident": 0.0012,
+    "tonnesPerJob": 0.0008,
+    "recyclableShare": 0.35,
+    "litterTonnesPerAttendee": 0.0002
+  },
+  "fire": {
+    "ignitionPerBuildingDay": 0.00025,
+    "zoneRisk": {
+      "residential": 1,
+      "commercial": 1.5,
+      "office": 0.8,
+      "industrial": 2.5,
+      "agricultural": 0.8
+    },
+    "startIntensity": 5,
+    "growthPerMinute": 1.0,
+    "accelerationAt": 50,
+    "suppressionPerAppliance": 4,
+    "hydrantSearchTiles": 3,
+    "hydrantLps": 25,
+    "goodHydrantM": 15,
+    "tankShare": 0.2,
+    "appliancesByArea": [
+      [1, 1],
+      [4, 2],
+      [12, 3]
+    ],
+    "damageOccupancy": 0.8,
+    "gutsCondition": 20,
+    "smokeAir": 0.3,
+    "targetResponseMinutes": 10
+  },
+  "events": [
+    {
+      "id": "match",
+      "name": "Match day",
+      "everyDays": 7,
+      "jitterDays": 2,
+      "startHour": 15,
+      "hours": 2,
+      "attendance": [0.7, 1.0],
+      "carsPerAttendee": 0.3,
+      "arrivalHours": 2,
+      "departureHours": 1,
+      "levyPerAttendee": 1,
+      "policePer1000": 4,
+      "crowdRisk": 1
+    },
+    {
+      "id": "concert",
+      "name": "Concert",
+      "everyDays": 20,
+      "jitterDays": 6,
+      "startHour": 19,
+      "hours": 3,
+      "attendance": [0.6, 1.0],
+      "carsPerAttendee": 0.35,
+      "arrivalHours": 2,
+      "departureHours": 1,
+      "levyPerAttendee": 1.2,
+      "policePer1000": 3,
+      "crowdRisk": 0.8
+    },
+    {
+      "id": "conference",
+      "name": "Conference",
+      "everyDays": 5,
+      "jitterDays": 2,
+      "startHour": 9,
+      "hours": 8,
+      "attendance": [0.3, 0.6],
+      "carsPerAttendee": 0.45,
+      "arrivalHours": 2,
+      "departureHours": 1,
+      "levyPerAttendee": 1.5,
+      "policePer1000": 0.5,
+      "crowdRisk": 0.1
+    },
+    {
+      "id": "sale",
+      "name": "Shopping weekend",
+      "everyDays": 10,
+      "jitterDays": 3,
+      "startHour": 9,
+      "hours": 10,
+      "attendance": [0.6, 1.0],
+      "carsPerAttendee": 0.5,
+      "arrivalHours": 2,
+      "departureHours": 2,
+      "levyPerAttendee": 0.2,
+      "policePer1000": 1,
+      "crowdRisk": 0.2
+    },
+    {
+      "id": "graduation",
+      "name": "Graduation day",
+      "everyDays": 30,
+      "jitterDays": 4,
+      "startHour": 11,
+      "hours": 4,
+      "attendance": [0.5, 0.9],
+      "carsPerAttendee": 0.4,
+      "arrivalHours": 2,
+      "departureHours": 1,
+      "levyPerAttendee": 0.4,
+      "policePer1000": 0.5,
+      "crowdRisk": 0.1
+    }
+  ],
+  "eventMeasures": {
+    "policing": {
+      "name": "Extra policing",
+      "costPer1000": 300,
+      "covers": 1.0
+    },
+    "stewarding": {
+      "name": "Stewards and park and ride",
+      "costPer1000": 200,
+      "carReduction": 0.35
+    },
+    "closeRoads": {
+      "name": "Close the roads beside the venue",
+      "cost": 1500,
+      "crowdRiskFactor": 0.5
+    },
+    "cleanup": {
+      "name": "Extra street cleaning",
+      "costPer1000": 150
+    }
+  },
+  "eventsKept": 12,
+  "scheduleAheadDays": 10,
+  "facilities": [
+    {
+      "id": "fireStation",
+      "code": 500,
+      "name": "Fire station",
+      "kind": "fire",
+      "footprint": [2, 2],
+      "cost": 25000,
+      "upkeepPerDay": 500,
+      "jobs": 24,
+      "powerKw": 20,
+      "waterLpd": 2000,
+      "priority": 1,
+      "zone": "office",
+      "crewType": "fire",
+      "crews": 2,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1.0,
+          "z": 1.0,
+          "w": 1.95,
+          "d": 1.95,
+          "h": 0.03,
+          "colour": "#9c9a92"
+        },
+        {
+          "shape": "box",
+          "x": 0.75,
+          "z": 0.8,
+          "w": 1.3,
+          "d": 1.2,
+          "h": 0.55,
+          "colour": "#b5432f",
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 0.75,
+          "z": 0.8,
+          "w": 1.32,
+          "d": 1.22,
+          "h": 0.06,
+          "colour": "#e8e2d4",
+          "y": 0.55
+        },
+        {
+          "shape": "box",
+          "x": 1.6,
+          "z": 0.6,
+          "w": 0.35,
+          "d": 0.35,
+          "h": 0.95,
+          "colour": "#b5432f"
+        },
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.6,
+          "w": 0.5,
+          "d": 0.4,
+          "h": 0.2,
+          "colour": "#d62728"
+        }
+      ]
+    },
+    {
+      "id": "policeStation",
+      "code": 501,
+      "name": "Police station",
+      "kind": "police",
+      "footprint": [2, 2],
+      "cost": 22000,
+      "upkeepPerDay": 600,
+      "jobs": 40,
+      "powerKw": 25,
+      "waterLpd": 2500,
+      "priority": 1,
+      "zone": "office",
+      "capacity": 6000,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1.0,
+          "z": 1.0,
+          "w": 1.95,
+          "d": 1.95,
+          "h": 0.03,
+          "colour": "#9c9a92"
+        },
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 0.85,
+          "w": 1.6,
+          "d": 1.2,
+          "h": 0.6,
+          "colour": "#3f5f8a",
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 0.85,
+          "w": 1.62,
+          "d": 1.22,
+          "h": 0.05,
+          "colour": "#dfe6ee",
+          "y": 0.6
+        },
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 1.6,
+          "w": 0.3,
+          "d": 0.3,
+          "h": 0.15,
+          "colour": "#1f77b4"
+        }
+      ]
+    },
+    {
+      "id": "healthCentre",
+      "code": 502,
+      "name": "Health centre",
+      "kind": "health",
+      "footprint": [2, 2],
+      "cost": 20000,
+      "upkeepPerDay": 550,
+      "jobs": 30,
+      "powerKw": 30,
+      "waterLpd": 3000,
+      "priority": 1,
+      "zone": "office",
+      "capacity": 5000,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1.0,
+          "z": 1.0,
+          "w": 1.95,
+          "d": 1.95,
+          "h": 0.03,
+          "colour": "#b9c1a8"
+        },
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 0.8,
+          "w": 1.6,
+          "d": 1.1,
+          "h": 0.45,
+          "colour": "#e9eef0",
+          "windows": true
+        },
+        {
+          "shape": "gable",
+          "x": 1,
+          "z": 0.8,
+          "y": 0.45,
+          "w": 1.65,
+          "d": 1.15,
+          "h": 0.2,
+          "colour": "#4a9c7e"
+        },
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 1.6,
+          "w": 0.25,
+          "d": 0.25,
+          "h": 0.25,
+          "colour": "#2ca02c"
+        }
+      ]
+    },
+    {
+      "id": "school",
+      "code": 503,
+      "name": "School",
+      "kind": "school",
+      "footprint": [2, 2],
+      "cost": 24000,
+      "upkeepPerDay": 600,
+      "jobs": 45,
+      "powerKw": 35,
+      "waterLpd": 6000,
+      "priority": 1,
+      "zone": "office",
+      "capacity": 700,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1.0,
+          "z": 1.0,
+          "w": 1.95,
+          "d": 1.95,
+          "h": 0.03,
+          "colour": "#8fae6b"
+        },
+        {
+          "shape": "box",
+          "x": 0.75,
+          "z": 0.7,
+          "w": 1.3,
+          "d": 0.9,
+          "h": 0.5,
+          "colour": "#c8915a",
+          "windows": true
+        },
+        {
+          "shape": "gable",
+          "x": 0.75,
+          "z": 0.7,
+          "y": 0.5,
+          "w": 1.35,
+          "d": 0.95,
+          "h": 0.22,
+          "colour": "#7a4a32"
+        },
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.45,
+          "w": 0.8,
+          "d": 0.7,
+          "h": 0.02,
+          "colour": "#b04a3a"
+        }
+      ]
+    },
+    {
+      "id": "wasteDepot",
+      "code": 504,
+      "name": "Waste collection depot",
+      "kind": "waste",
+      "footprint": [2, 2],
+      "cost": 16000,
+      "upkeepPerDay": 450,
+      "jobs": 20,
+      "powerKw": 15,
+      "waterLpd": 1500,
+      "priority": 3,
+      "zone": "industrial",
+      "capacity": 40,
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1.0,
+          "z": 1.0,
+          "w": 1.95,
+          "d": 1.95,
+          "h": 0.03,
+          "colour": "#9c9a92"
+        },
+        {
+          "shape": "box",
+          "x": 0.7,
+          "z": 0.7,
+          "w": 1.2,
+          "d": 1.1,
+          "h": 0.45,
+          "colour": "#7d8f69"
+        },
+        {
+          "shape": "gable",
+          "x": 0.7,
+          "z": 0.7,
+          "y": 0.45,
+          "w": 1.25,
+          "d": 1.15,
+          "h": 0.18,
+          "colour": "#4b5a3e"
+        },
+        {
+          "shape": "box",
+          "x": 1.55,
+          "z": 1.5,
+          "w": 0.35,
+          "d": 0.6,
+          "h": 0.25,
+          "colour": "#2e7d32"
+        },
+        {
+          "shape": "box",
+          "x": 1.55,
+          "z": 0.6,
+          "w": 0.35,
+          "d": 0.6,
+          "h": 0.25,
+          "colour": "#2e7d32"
+        }
+      ]
+    },
+    {
+      "id": "recyclingCentre",
+      "code": 505,
+      "name": "Recycling centre",
+      "kind": "recycling",
+      "footprint": [3, 2],
+      "cost": 20000,
+      "upkeepPerDay": 400,
+      "jobs": 15,
+      "powerKw": 80,
+      "waterLpd": 1000,
+      "priority": 4,
+      "zone": "industrial",
+      "capacity": 18,
+      "pollution": {
+        "air": 0.5,
+        "noise": 2
+      },
+      "parts": [
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.0,
+          "w": 2.95,
+          "d": 1.95,
+          "h": 0.03,
+          "colour": "#9c9a92"
+        },
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 0.9,
+          "w": 1.7,
+          "d": 1.4,
+          "h": 0.6,
+          "colour": "#6b8e9e"
+        },
+        {
+          "shape": "box",
+          "x": 2.4,
+          "z": 0.6,
+          "w": 0.7,
+          "d": 0.8,
+          "h": 0.25,
+          "colour": "#3a7d44"
+        },
+        {
+          "shape": "box",
+          "x": 2.4,
+          "z": 1.5,
+          "w": 0.7,
+          "d": 0.6,
+          "h": 0.2,
+          "colour": "#e0b040"
+        }
+      ]
+    },
+    {
+      "id": "landfill",
+      "code": 506,
+      "name": "Landfill site",
+      "kind": "landfill",
+      "footprint": [4, 4],
+      "cost": 12000,
+      "upkeepPerDay": 250,
+      "jobs": 10,
+      "powerKw": 0,
+      "waterLpd": 0,
+      "priority": 4,
+      "zone": "industrial",
+      "capacity": 60000,
+      "pollution": {
+        "air": 4,
+        "noise": 1.5
+      },
+      "parts": [
+        {
+          "shape": "box",
+          "x": 2,
+          "z": 2,
+          "w": 3.95,
+          "d": 3.95,
+          "h": 0.03,
+          "colour": "#7a6a4f"
+        },
+        {
+          "shape": "box",
+          "x": 1.6,
+          "z": 1.8,
+          "w": 2.6,
+          "d": 2.6,
+          "h": 0.25,
+          "colour": "#8a7a5a"
+        },
+        {
+          "shape": "box",
+          "x": 1.4,
+          "z": 1.6,
+          "w": 1.6,
+          "d": 1.6,
+          "h": 0.2,
+          "colour": "#6e7f52",
+          "y": 0.25
+        },
+        {
+          "shape": "box",
+          "x": 3.4,
+          "z": 3.4,
+          "w": 0.4,
+          "d": 0.3,
+          "h": 0.15,
+          "colour": "#d4a72c"
+        }
+      ]
+    },
+    {
+      "id": "stadium",
+      "code": 510,
+      "name": "Stadium",
+      "kind": "landmark",
+      "footprint": [5, 4],
+      "cost": 180000,
+      "upkeepPerDay": 1400,
+      "jobs": 80,
+      "powerKw": 300,
+      "waterLpd": 15000,
+      "priority": 3,
+      "zone": "commercial",
+      "capacity": 20000,
+      "landmark": {
+        "ratesPerDay": 1500,
+        "landValue": 0.06,
+        "landValueRadius": 10,
+        "eventPowerFactor": 5,
+        "eventWaterFactor": 6,
+        "eventNoise": 12,
+        "events": ["match", "concert"]
+      },
+      "parts": [
+        {
+          "shape": "box",
+          "x": 2.5,
+          "z": 2.0,
+          "w": 4.95,
+          "d": 3.95,
+          "h": 0.03,
+          "colour": "#6f7f66"
+        },
+        {
+          "shape": "box",
+          "x": 2.5,
+          "z": 2,
+          "w": 3.2,
+          "d": 2.2,
+          "h": 0.02,
+          "colour": "#3f9b3f",
+          "y": 0.03
+        },
+        {
+          "shape": "box",
+          "x": 2.5,
+          "z": 0.4,
+          "w": 4.6,
+          "d": 0.6,
+          "h": 0.7,
+          "colour": "#c9ccd1"
+        },
+        {
+          "shape": "box",
+          "x": 2.5,
+          "z": 3.6,
+          "w": 4.6,
+          "d": 0.6,
+          "h": 0.7,
+          "colour": "#c9ccd1"
+        },
+        {
+          "shape": "box",
+          "x": 0.35,
+          "z": 2,
+          "w": 0.6,
+          "d": 2.6,
+          "h": 0.55,
+          "colour": "#b7bbc1"
+        },
+        {
+          "shape": "box",
+          "x": 4.65,
+          "z": 2,
+          "w": 0.6,
+          "d": 2.6,
+          "h": 0.55,
+          "colour": "#b7bbc1"
+        },
+        {
+          "shape": "cylinder",
+          "x": 0.3,
+          "z": 0.3,
+          "w": 0.15,
+          "d": 0.15,
+          "h": 1.6,
+          "colour": "#7f8a93"
+        },
+        {
+          "shape": "cylinder",
+          "x": 4.7,
+          "z": 3.7,
+          "w": 0.15,
+          "d": 0.15,
+          "h": 1.6,
+          "colour": "#7f8a93"
+        },
+        {
+          "shape": "box",
+          "x": 2.5,
+          "z": 0.15,
+          "w": 4.6,
+          "d": 0.15,
+          "h": 0.1,
+          "colour": "#d62728",
+          "y": 0.7
+        }
+      ]
+    },
+    {
+      "id": "shoppingCentre",
+      "code": 511,
+      "name": "Shopping centre",
+      "kind": "landmark",
+      "footprint": [4, 4],
+      "cost": 150000,
+      "upkeepPerDay": 1100,
+      "jobs": 600,
+      "powerKw": 1500,
+      "waterLpd": 30000,
+      "priority": 3,
+      "zone": "commercial",
+      "capacity": 15000,
+      "landmark": {
+        "ratesPerDay": 2600,
+        "landValue": 0.08,
+        "landValueRadius": 12,
+        "eventPowerFactor": 1.4,
+        "eventWaterFactor": 1.5,
+        "eventNoise": 2,
+        "events": ["sale"]
+      },
+      "parts": [
+        {
+          "shape": "box",
+          "x": 2.0,
+          "z": 2.0,
+          "w": 3.95,
+          "d": 3.95,
+          "h": 0.03,
+          "colour": "#8c8a86"
+        },
+        {
+          "shape": "box",
+          "x": 2,
+          "z": 1.6,
+          "w": 3.6,
+          "d": 2.6,
+          "h": 0.75,
+          "colour": "#d9c9a8",
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 2,
+          "z": 1.6,
+          "w": 1.4,
+          "d": 1.2,
+          "h": 0.35,
+          "colour": "#9fc5e8",
+          "y": 0.75
+        },
+        {
+          "shape": "box",
+          "x": 2,
+          "z": 3.4,
+          "w": 3.6,
+          "d": 0.9,
+          "h": 0.02,
+          "colour": "#5c6570",
+          "y": 0.03
+        },
+        {
+          "shape": "box",
+          "x": 0.6,
+          "z": 3.4,
+          "w": 0.25,
+          "d": 0.25,
+          "h": 0.5,
+          "colour": "#e06666"
+        }
+      ]
+    },
+    {
+      "id": "hospital",
+      "code": 512,
+      "name": "Hospital",
+      "kind": "health",
+      "footprint": [4, 3],
+      "cost": 120000,
+      "upkeepPerDay": 2200,
+      "jobs": 500,
+      "powerKw": 900,
+      "waterLpd": 60000,
+      "priority": 0,
+      "zone": "office",
+      "capacity": 30000,
+      "landmark": {
+        "ratesPerDay": 0,
+        "landValue": 0.05,
+        "landValueRadius": 10,
+        "eventPowerFactor": 1,
+        "eventWaterFactor": 1,
+        "eventNoise": 0,
+        "events": []
+      },
+      "parts": [
+        {
+          "shape": "box",
+          "x": 2.0,
+          "z": 1.5,
+          "w": 3.95,
+          "d": 2.95,
+          "h": 0.03,
+          "colour": "#b9c1a8"
+        },
+        {
+          "shape": "box",
+          "x": 1.6,
+          "z": 1.2,
+          "w": 2.8,
+          "d": 2,
+          "h": 1.1,
+          "colour": "#eef1f3",
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 3.3,
+          "z": 1.4,
+          "w": 1.1,
+          "d": 1.6,
+          "h": 0.6,
+          "colour": "#dfe6ea",
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 1.6,
+          "z": 1.2,
+          "w": 0.8,
+          "d": 0.8,
+          "h": 0.25,
+          "colour": "#d62728",
+          "y": 1.1
+        },
+        {
+          "shape": "box",
+          "x": 3.3,
+          "z": 2.65,
+          "w": 1.2,
+          "d": 0.5,
+          "h": 0.02,
+          "colour": "#c0392b",
+          "y": 0.03
+        }
+      ]
+    },
+    {
+      "id": "university",
+      "code": 513,
+      "name": "University",
+      "kind": "landmark",
+      "footprint": [5, 4],
+      "cost": 140000,
+      "upkeepPerDay": 1600,
+      "jobs": 400,
+      "powerKw": 700,
+      "waterLpd": 40000,
+      "priority": 3,
+      "zone": "office",
+      "capacity": 6000,
+      "landmark": {
+        "ratesPerDay": 900,
+        "landValue": 0.1,
+        "landValueRadius": 12,
+        "eventPowerFactor": 1.3,
+        "eventWaterFactor": 1.3,
+        "eventNoise": 2,
+        "events": ["graduation"]
+      },
+      "parts": [
+        {
+          "shape": "box",
+          "x": 2.5,
+          "z": 2.0,
+          "w": 4.95,
+          "d": 3.95,
+          "h": 0.03,
+          "colour": "#8fae6b"
+        },
+        {
+          "shape": "box",
+          "x": 1.4,
+          "z": 1.2,
+          "w": 2.2,
+          "d": 1.6,
+          "h": 0.8,
+          "colour": "#c8a27a",
+          "windows": true
+        },
+        {
+          "shape": "gable",
+          "x": 1.4,
+          "z": 1.2,
+          "y": 0.8,
+          "w": 2.25,
+          "d": 1.65,
+          "h": 0.3,
+          "colour": "#6b4a3a"
+        },
+        {
+          "shape": "box",
+          "x": 3.8,
+          "z": 1.6,
+          "w": 1.6,
+          "d": 2.4,
+          "h": 0.65,
+          "colour": "#b98f68",
+          "windows": true
+        },
+        {
+          "shape": "box",
+          "x": 1.4,
+          "z": 3.2,
+          "w": 0.4,
+          "d": 0.4,
+          "h": 1.4,
+          "colour": "#a98060"
+        },
+        {
+          "shape": "gable",
+          "x": 1.4,
+          "z": 3.2,
+          "y": 1.4,
+          "w": 0.45,
+          "d": 0.45,
+          "h": 0.3,
+          "colour": "#6b4a3a"
+        }
+      ]
+    },
+    {
+      "id": "conferenceCentre",
+      "code": 514,
+      "name": "Conference and events centre",
+      "kind": "landmark",
+      "footprint": [4, 3],
+      "cost": 90000,
+      "upkeepPerDay": 800,
+      "jobs": 120,
+      "powerKw": 500,
+      "waterLpd": 15000,
+      "priority": 3,
+      "zone": "office",
+      "capacity": 6000,
+      "landmark": {
+        "ratesPerDay": 900,
+        "landValue": 0.05,
+        "landValueRadius": 8,
+        "eventPowerFactor": 2.5,
+        "eventWaterFactor": 2.5,
+        "eventNoise": 6,
+        "events": ["conference", "concert"]
+      },
+      "parts": [
+        {
+          "shape": "box",
+          "x": 2.0,
+          "z": 1.5,
+          "w": 3.95,
+          "d": 2.95,
+          "h": 0.03,
+          "colour": "#9c9a92"
+        },
+        {
+          "shape": "box",
+          "x": 2,
+          "z": 1.4,
+          "w": 3.6,
+          "d": 2.4,
+          "h": 0.7,
+          "colour": "#9aa7b5",
+          "windows": true
+        },
+        {
+          "shape": "cylinder",
+          "x": 2,
+          "z": 1.4,
+          "w": 1.6,
+          "d": 1.6,
+          "h": 0.35,
+          "colour": "#d8dde3",
+          "y": 0.7
+        },
+        {
+          "shape": "box",
+          "x": 2,
+          "z": 2.85,
+          "w": 2,
+          "d": 0.3,
+          "h": 0.25,
+          "colour": "#6a3d9a"
+        }
+      ]
+    }
+  ]
+}

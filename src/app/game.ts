@@ -4,7 +4,7 @@
  * layers; sim, render and ui stay independent of each other.
  */
 import { GAME_NAME } from '../config';
-import { GAME, Simulation } from '../sim';
+import { ASSETS, GAME, Simulation } from '../sim';
 import type { Command, DensityId, SimEvent, WeatherEventId } from '../sim';
 import { GameRenderer } from '../render/renderer';
 import type { OverlayId } from '../render/renderer';
@@ -16,7 +16,7 @@ import { loadSettings, saveSettings } from '../platform/settings';
 import type { Settings } from '../platform/settings';
 import { Hud, randomSeed } from '../ui/hud';
 import type { UiActions } from '../ui/hud';
-import { formatInt } from '../ui/format';
+import { formatInt, formatMoney } from '../ui/format';
 import { CREW_NAMES, formatDuration } from '../ui/inbox';
 import { TOOLS } from '../ui/tools';
 import type { ToolId } from '../ui/tools';
@@ -152,7 +152,8 @@ export class Game {
       case 'incidentResolved':
         if (ev.outcome === 'repaired')
           this.toast(`${ev.name} repaired after ${formatDuration(ev.minutes)}.`, 'good');
-        else if (ev.outcome === 'cleared') this.toast(`${ev.name} over.`, 'good');
+        else if (ev.outcome === 'cleared' && !ev.name.startsWith(ASSETS.incidents.fire.name))
+          this.toast(`${ev.name} over.`, 'good');
         break;
       case 'slaBreached':
         this.toast(`${ev.name}: the repair target time has been missed.`, 'warn');
@@ -168,7 +169,7 @@ export class Game {
         break;
       case 'noCrew':
         this.toast(
-          `No ${CREW_NAMES[ev.crew].toLowerCase()} crew to send. Build a depot (Maintenance tools) so faults get fixed.`,
+          `No ${CREW_NAMES[ev.crew].toLowerCase()} crew to send. ${ev.crew === 'fire' ? 'Build a fire station (Services tools).' : 'Build a depot (Maintenance tools) so faults get fixed.'}`,
           'warn',
         );
         break;
@@ -180,6 +181,36 @@ export class Game {
         break;
       case 'permitOverrun':
         this.toast(`Roadworks at ${ev.x}, ${ev.y} are overrunning their permit.`, 'warn');
+        break;
+      case 'fireOut':
+        this.toast(
+          `Fire at the ${ev.name.toLowerCase()} on ${ev.street} put out after ${formatDuration(ev.minutes)}${ev.damage >= 50 ? ', badly damaged' : ''}.`,
+          'good',
+        );
+        break;
+      case 'buildingBurntDown':
+        this.toast(
+          `A ${ev.name.toLowerCase()} on ${ev.street} has burnt down. Fire stations close by, and mains with good pressure, put fires out faster.`,
+          'error',
+        );
+        break;
+      case 'cityEventStarting':
+        this.toast(
+          `${ev.name} at the ${ev.venue.toLowerCase()}: ${formatInt(ev.attendance)} people on their way.${ev.prepared ? '' : ' Nothing was arranged for it (city panel, Shift+N).'}`,
+          ev.prepared ? 'info' : 'warn',
+        );
+        break;
+      case 'cityEventEnded':
+        this.toast(
+          `${ev.name} at the ${ev.venue.toLowerCase()} is over: ${formatInt(ev.attendance)} came, ${formatMoney(ev.revenue)} in levies.${ev.trouble ? ' There was trouble in the crowds.' : ''}${ev.litter ? ' Litter was left behind.' : ''}`,
+          ev.trouble ? 'warn' : 'good',
+        );
+        break;
+      case 'monthClosed':
+        this.toast(
+          `Month ${ev.month} accounts: income ${formatMoney(ev.income)}, spending ${formatMoney(ev.expenses)}. Open the budget with Shift+B.`,
+          ev.income >= ev.expenses ? 'good' : 'warn',
+        );
         break;
       case 'irrigationLicenceReached':
         this.toast(
@@ -228,6 +259,10 @@ export class Game {
       return;
     }
     if (this.hud.modalOpen || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.shiftKey && (e.code === 'KeyB' || e.code === 'KeyN')) {
+      this.hud.togglePanel(e.code === 'KeyB' ? 'budget' : 'city');
+      return;
+    }
     const shiftTool = e.shiftKey ? TOOLS.find((t) => t.shift && t.code === e.code) : undefined;
     if (shiftTool) {
       this.tools.selectTool(shiftTool.tool);
@@ -270,7 +305,7 @@ export class Game {
         this.cycleOverlay();
         break;
       case 'Backquote':
-        this.hud.inbox.toggle();
+        this.hud.togglePanel('inbox');
         break;
     }
   }

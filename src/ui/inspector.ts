@@ -34,8 +34,15 @@ import {
   season,
   seasonOf,
   zoneTypeByCode,
+  COVERAGE_KINDS,
+  cityEventDef,
+  clockString,
+  pollutionShare,
 } from '../sim';
 import type {
+  CoverageKind,
+  PollutionKind,
+  ServiceFacilityDef,
   AssetRef,
   Building,
   Command,
@@ -295,6 +302,120 @@ export class Inspector {
     if (snap.faults.offline.has(b.id)) rows.push(['Service', 'Out of service']);
   }
 
+  private serviceRows(snap: SimSnapshot, b: Building, def: ServiceFacilityDef, rows: Row[]): void {
+    const city = snap.city;
+    rows.push(['Jobs', formatInt(def.jobs)]);
+    rows.push(['Power', def.powerKw > 0 ? powerStatus(b) : 'Not needed']);
+    if (def.waterLpd > 0) rows.push(['Water', b.dryMinutes > 0 ? 'No supply' : 'Supplied']);
+    if (def.priority === 0) rows.push(['Priority customer', 'Yes: kept supplied first']);
+    const served = city.facilityRatio(b.id);
+    switch (def.kind) {
+      case 'fire': {
+        const crews = snap.crews.filter((c) => c.depot === b.id);
+        const busy = crews.filter((c) => c.status !== 'idle').length;
+        rows.push(['Fire engines', `${crews.length} on duty, ${busy} out`]);
+        for (const c of crews) {
+          const status =
+            c.status === 'idle'
+              ? 'at the station'
+              : c.status === 'enRoute'
+                ? 'on the way to a fire'
+                : c.status === 'onSite'
+                  ? 'fighting a fire'
+                  : 'returning';
+          rows.push([crewLabel(c), status]);
+        }
+        break;
+      }
+      case 'police':
+      case 'health':
+        rows.push([
+          'Serves',
+          `up to ${formatInt((def.capacity ?? 0) * snap.economy.budgets.services)} residents`,
+        ]);
+        rows.push(['Coping with demand', `${Math.round(served * 100)}%`]);
+        break;
+      case 'school':
+        rows.push(['Places', formatInt((def.capacity ?? 0) * snap.economy.budgets.services)]);
+        rows.push(['Pupils with a place', `${Math.round(served * 100)}%`]);
+        break;
+      case 'waste':
+        rows.push([
+          'Collects',
+          `${((def.capacity ?? 0) * snap.economy.budgets.services).toFixed(0)} t a day`,
+        ]);
+        rows.push(['Coping with demand', `${Math.round(served * 100)}%`]);
+        break;
+      case 'recycling':
+        rows.push(['Recycles', `up to ${def.capacity ?? 0} t a day`]);
+        break;
+      case 'landfill': {
+        const used = city.landfillUsed(b.id);
+        const cap = def.capacity ?? 1;
+        rows.push([
+          'Filled',
+          `${formatInt(used)} of ${formatInt(cap)} t (${Math.round((100 * used) / cap)}%)`,
+        ]);
+        break;
+      }
+      default:
+        break;
+    }
+    if (def.landmark) {
+      if (def.capacity) rows.push(['Capacity', `${formatInt(def.capacity)} people`]);
+      if (def.landmark.ratesPerDay > 0)
+        rows.push(['Business rates', `${formatMoney(city.dailyTaxes(b).businessRates)} a day`]);
+      const next = snap.events
+        .filter((e) => e.venue === b.id && e.status !== 'done')
+        .sort((a, z) => a.start - z.start)[0];
+      if (next) {
+        rows.push([
+          'Next event',
+          `${cityEventDef(next.type).name}, day ${dayOf(next.start)} at ${clockString(next.start)} (${formatInt(next.attendance)})`,
+        ]);
+      } else if (def.landmark.events.length > 0) rows.push(['Next event', 'None booked yet']);
+    }
+    rows.push(['Running cost', `${formatMoney(city.dailyUpkeep(b))} a day`]);
+    rows.push(['Cost to build', formatMoney(def.cost)]);
+    this.fireRows(snap, b, rows);
+  }
+
+  /** Street, fire, land value, pollution, services, bins, happiness and taxes for a building. */
+  private cityRows(snap: SimSnapshot, b: Building, rows: Row[], home: boolean): void {
+    const city = snap.city;
+    const w = snap.world;
+    const tile = b.y * w.width + b.x;
+    rows.push(['Street', city.streetName(tile)]);
+    this.fireRows(snap, b, rows);
+    rows.push(['Land value', `${Math.round(city.landValue(b) * 100)}%`]);
+    const air = city.pollution('air', tile);
+    const noise = city.pollution('noise', tile);
+    rows.push(['Air / noise', `${pollutionLabel('air', air)} / ${pollutionLabel('noise', noise)}`]);
+    const parts = COVERAGE_KINDS.map((k) => {
+      const m = city.coverageMinutes(b, k);
+      const lvl = city.serviceLevel(b, k);
+      return `${SERVICE_NAMES[k]} ${Number.isFinite(m) ? `${Math.round(m)} min` : '—'}${Number.isFinite(m) && lvl < 0.995 ? ` (${Math.round(lvl * 100)}%)` : ''}`;
+    });
+    rows.push(['Services', parts.join(', ')]);
+    if (city.wasteTonnes(b) > 0)
+      rows.push(['Bins', city.binsMissed(b) ? 'Missed at the last round' : 'Collected']);
+    if (home) rows.push(['Happiness', `${Math.round(city.happiness(b))} / 100`]);
+    const t = city.dailyTaxes(b);
+    if (t.councilTax > 0) rows.push(['Council tax', `${formatMoney(t.councilTax)} a day`]);
+    if (t.businessRates > 0) rows.push(['Business rates', `${formatMoney(t.businessRates)} a day`]);
+    if (t.farmExports > 0) rows.push(['Exports', `${formatMoney(t.farmExports)} a day`]);
+  }
+
+  private fireRows(snap: SimSnapshot, b: Building, rows: Row[]): void {
+    const f = snap.city.fireAt(b.id);
+    if (!f) return;
+    const engines = snap.city.enginesOnSite(f);
+    rows.push([
+      'Fire',
+      `${Math.round(f.intensity)}% of the building alight, ${engines} engine${engines === 1 ? '' : 's'} on site${engines > 0 ? `, water ${Math.round(snap.city.fireWater(f) * 100)}%` : ''}`,
+    ]);
+  }
+
   private depotRows(snap: SimSnapshot, b: Building, rows: Row[]): void {
     const crews = snap.crews.filter((c) => c.depot === b.id);
     rows.push(['Crews', `${crews.length}`]);
@@ -459,10 +580,15 @@ export class Inspector {
       rows.push(['Power', powerStatus(b)]);
       rows.push(['Outage priority', POWER.priorityNames[def.priority] ?? String(def.priority)]);
       this.waterRows(snap, b, def, rows);
+      this.cityRows(snap, b, rows, def.residents > 0);
       return def.name;
     }
     if (def.utility === 'depot') {
       this.depotRows(snap, b, rows);
+      return def.name;
+    }
+    if (def.utility === 'service') {
+      this.serviceRows(snap, b, def, rows);
       return def.name;
     }
     this.facilityAssetRows(snap, b, rows);
@@ -536,6 +662,19 @@ function sewerText(snap: SimSnapshot, id: number): string {
 function duration(minutes: number): string {
   const hrs = minutes / 60;
   return hrs < 1 ? `${minutes} minutes` : `${hrs < 10 ? hrs.toFixed(1) : Math.round(hrs)} hours`;
+}
+
+const SERVICE_NAMES: Record<CoverageKind, string> = {
+  fire: 'fire',
+  police: 'police',
+  health: 'health',
+  school: 'school',
+  waste: 'bins',
+};
+
+function pollutionLabel(kind: PollutionKind, v: number): string {
+  const share = pollutionShare(kind, v);
+  return share <= 0 ? 'clean' : share < 0.4 ? 'some' : share < 0.8 ? 'poor' : 'bad';
 }
 
 function powerStatus(b: Building): string {

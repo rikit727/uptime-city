@@ -10,7 +10,7 @@ import { ASSETS, Simulation, TRAFFIC, dayOf, deserializeState, serializeState } 
 import type { SerializedState } from '../sim';
 
 export const SAVE_FORMAT = 'uptime-city-save';
-export const CURRENT_SAVE_VERSION = 5;
+export const CURRENT_SAVE_VERSION = 6;
 
 export interface SaveMeta {
   gameName: string;
@@ -228,6 +228,100 @@ export const MIGRATIONS: Record<number, (save: RawSave) => RawSave> = {
           },
         },
         permits: [],
+      },
+    };
+  },
+  // v5 -> v6 (milestone 6): economy (budgets, taxes, accounts, loans), services,
+  // fires, events calendar, complaints, happiness, pollution grids, the fires
+  // rule and event trip purposes in the traffic round.
+  5: (save) => {
+    const state = save.state as Record<string, unknown>;
+    const world = state.world as Record<string, unknown>;
+    const width = Number(world.width);
+    const height = Number(world.height);
+    const cells = Math.ceil(width / 4) * Math.ceil(height / 4);
+    const traffic = state.traffic as Record<string, unknown>;
+    const table = traffic.table as Record<string, Record<string, unknown>>;
+    const trafficCells = Math.ceil(width / TRAFFIC.cellSize) * Math.ceil(height / TRAFFIC.cellSize);
+    const zeroFactors = {
+      services: 0,
+      utilities: 0,
+      waste: 0,
+      commute: 0,
+      pollution: 0,
+      taxes: 0,
+      landValue: 0,
+    };
+    const ledger = () => ({
+      income: {
+        councilTax: 0,
+        businessRates: 0,
+        farmExports: 0,
+        electricity: 0,
+        water: 0,
+        events: 0,
+      },
+      expenses: {
+        capital: 0,
+        maintenance: 0,
+        repairs: 0,
+        crews: 0,
+        upkeep: 0,
+        fuel: 0,
+        services: 0,
+        fines: 0,
+        interest: 0,
+      },
+      borrowed: 0,
+      repaid: 0,
+    });
+    return {
+      ...save,
+      version: 6,
+      state: {
+        ...state,
+        rules: { ...(state.rules as object), fires: true },
+        traffic: {
+          ...traffic,
+          table: {
+            load: table.load,
+            prod: { ...table.prod, eventIn: [0, trafficCells], eventOut: [0, trafficCells] },
+            attr: { ...table.attr, eventIn: [0, trafficCells], eventOut: [0, trafficCells] },
+          },
+        },
+        economy: {
+          budgets: { roads: 1, water: 1, power: 1, services: 1 },
+          taxRates: { residential: 1, commercial: 1, office: 1, industrial: 1, agricultural: 1 },
+          month: ledger(),
+          lastMonth: null,
+          history: [],
+          meter: { electricityMWh: 0, gasMWh: 0, waterMl: 0 },
+          loans: [],
+          nextLoanId: 1,
+        },
+        services: {
+          ratios: [],
+          tipping: 1,
+          landfill: [],
+          waste: { generatedT: 0, collectedT: 0, recycledT: 0, landfilledT: 0, missed: 0 },
+          fireKpi: { fires: 0, extinguished: 0, destroyed: 0, responseMinutes: 0, responses: 0 },
+          nextFireId: 1,
+          nextEventId: 1,
+          nextComplaintId: 1,
+        },
+        fires: [],
+        events: [],
+        complaints: [],
+        happiness: {
+          city: 0,
+          factors: { ...zeroFactors },
+          complaintPenalty: 0,
+          cursor: -1,
+          sumWeight: 0,
+          sumScore: 0,
+          sumFactors: { ...zeroFactors },
+        },
+        pollution: { air: [0, cells], noise: [0, cells] },
       },
     };
   },

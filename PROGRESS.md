@@ -11,7 +11,7 @@ Spec: `docs/BUILD_PROMPT.md`. Architecture: `ARCHITECTURE.md`. Conventions: `CLA
 | 3   | Water, wastewater, pressure zones, irrigation                          | **Done**    |
 | 4   | Asset condition, incidents, crews, work orders                         | **Done**    |
 | 5   | Traffic, roadworks, permits                                            | **Done**    |
-| 6   | Services, landmarks, events, pollution, economy, happiness, complaints | Not started |
+| 6   | Services, landmarks, events, pollution, economy, happiness, complaints | **Done**    |
 | 7   | Overlays, dashboard, menus and settings, scenarios, UI polish          | Not started |
 | 8   | Performance pass and final docs review                                 | Not started |
 
@@ -244,6 +244,74 @@ Spec: `docs/BUILD_PROMPT.md`. Architecture: `ARCHITECTURE.md`. Conventions: `CLA
   that builds the trip table; a full-map round takes about 128 ticks (2 game
   hours). Smaller towns finish a round in one or a few ticks.
 
+## Milestone 6: what exists
+
+- Data: `services.json` (7 services and 5 landmarks, codes 500–514; coverage
+  times; waste; fire; 5 event types; event preparations), `economy.json` (taxes,
+  tariffs, fuel, wages, upkeep, budget and tax levels, auto maintenance, loans,
+  fines), `city.json` (pollution, land value, happiness, complaints, street
+  names). Industrial types, livestock farms and some shops emit `pollution`.
+- Services (`services.ts`): fire stations, police stations, health centres and the
+  hospital, schools, waste depots, recycling centres and landfill. Coverage by
+  free-flow road travel time from each facility (multi-source search, derived),
+  quality falling from `goodMinutes` to `maxMinutes`; capacity per facility over
+  its catchment (ratios saved hourly, scaled by the services budget); half service
+  without power or water. Daily waste collection, recycling, landfill filling,
+  missed bins.
+- Fire (`fire.ts`): hourly ignition roll (zone risk × footprint; `rules.fires`),
+  intensity growth by size, fire engines (crews at fire stations, 2-minute
+  mobilisation) dispatched through traffic on `firefighting` orders (one per
+  appliance; big buildings get 2–3), the access road closed while they work,
+  hydrant draw from the nearest main lowering neighbours' pressure, suppression
+  by hydrant pressure (tank only without water), burnt-down buildings, damage,
+  response-time KPIs, smoke.
+- Landmarks and events (`cityEvents.ts`): stadium, shopping centre, hospital,
+  university, conference and events centre. Match days, concerts, conferences,
+  shopping weekends and graduations booked automatically; crowd trips in the
+  traffic round (`eventIn`/`eventOut` purposes), venue power and water spikes,
+  crowd noise; preparations (extra police, stewards and park and ride, road
+  closures beside the venue, street cleaning); outcomes (crowd trouble, litter
+  into the next bin round, congestion) and a levy.
+- Pollution and land value (`pollution.ts`): hourly air and noise grids (4×4-tile
+  cells, exponential spread) from industry, gas stations, sewage works, landfill,
+  traffic, highways, fires and events; land value from services, landmarks, the
+  river and pollution. Growth of homes, shops and offices scales with land value.
+- Economy (`economy.ts`, `ledger.ts`): council tax, business rates and farm
+  exports (by land value and tax rate), electricity and water tariffs (metered),
+  gas, upkeep, crew wages, fines (licence breaches, spills, permit clashes and
+  overruns), every line in the month's accounts; department budgets setting crews
+  on duty, service capacity, an automatic maintenance allowance and decay speed;
+  tax rates damping demand; 30-day monthly accounts with history; loans.
+- Happiness and complaints (`happiness.ts`, `complaints.ts`): residents round
+  (taxes and happiness, sliced 300 buildings a tick, partial sums saved), seven
+  factors, complaint penalty; residential demand follows happiness. Complaints
+  from real events with street names ("No water on Mill Road for 3 hours"),
+  cooldowns, newest 40 kept.
+- UI: Services (Shift+4–0) and Landmarks (Shift+S/C/H/U/E) tools; budget panel
+  (Shift+B or click the cash: accounts, past months, budgets, backlog, tax rates,
+  loans); city panel (Shift+N or the happiness chip: factor bars, events calendar
+  with preparation buttons, complaints feed that jumps to the street, fire and
+  waste figures); inspector rows for street, fire, land value, pollution, service
+  times and levels, bins, happiness and taxes, and per-service facility figures;
+  flames over burning buildings, red fire engines; toasts for fires, events and
+  month ends; help text and controls.
+- Saves: version 6 with a v5 → v6 migration (tested).
+- Tests (185, 35 new): coverage by travel time (and a short cut), unpowered
+  stations, capacity sharing and budgets, waste with and without depot and tip,
+  recycling, street names, firefighting lowering pressure, a fire put out, a fire
+  burning down, no water → burns down, appliances by size, fires deterministic and
+  across a save, taxes, business rates, tax demand effect, tariffs/fuel/upkeep/
+  wages, meters, command costs booked, budgets scaling upkeep and decay, overrun
+  fines, crews on duty by budget, automatic maintenance, loans and month close,
+  events booked, crowds in the trip table and venue loads, outcomes, preparations
+  and road closures, pollution spread, traffic noise, land value, happiness,
+  sliced round across a save, complaints, a whole city deterministic across a save,
+  v5 migration.
+- Measured on a dense map (4,800 buildings): coverage rebuild 4 ms (on road or
+  service changes only), ratios 2.4 ms (:07), pollution 2.7 ms (:03), complaints
+  2 ms (:44), waste 2.9 ms (07:17), residents round 0.6 ms a tick for ~17 ticks,
+  settlement 0.6 ms; none share a tick with each other or the power dispatch.
+
 ## In progress
 
 Nothing.
@@ -258,12 +326,24 @@ Nothing.
   has no UI yet (M7 sandbox settings).
 - No main menu yet; the game opens on a new random-seed city (M7).
 - The game keeps running while a modal is open (decision 15).
-- No income yet: cash only goes down. Taxes, tariffs, farm exports
-  (`exportPerDay`) and running costs arrive with the economy in M6. Licence
-  breaches and spills have no fines yet.
-- Growth ignores land value, services and commute times for now (decision
-  19). Buildings never redevelop to a higher density in place; re-zoning
-  demolishes them.
+- Buildings never redevelop to a higher density in place; re-zoning demolishes
+  them.
+- Economy balance is a first pass: a small town with a stadium runs a deficit,
+  events pay for their preparations, gas power is profitable. Revisit with the
+  M7 scenarios.
+- Service facilities need power and water like businesses; placing them before
+  the water supply raises "no water" toasts at once (the hospital is a priority
+  customer).
+- Coverage uses free-flow times (decision 69), so congestion slows fire engines
+  but not the coverage figures.
+- Land value and happiness use the services' served share, which updates hourly.
+- Random fires only start in grown buildings (decision 73). Fires do not spread
+  to neighbours; there is no power isolation, cordon or evacuation yet (the M7
+  commercial fire scenario needs them).
+- Event road closures close every road tile beside the venue; trips that load
+  there go unserved while it is closed.
+- The happiness chip reads "–" until the first residents round after people move
+  in.
 - Several substations on one line are not limited jointly (decision 22).
 - Power dispatch scales with building count (~2 ms on a full map every 5th
   tick); slice it in the M8 performance pass if profiling shows the need.
@@ -274,7 +354,7 @@ Nothing.
 - Cities from v2 saves lose water (and slowly occupancy) until the player
   builds an intake and treatment works; the migration only lays mains.
 - A sewage works without power counts all its inflow as spill.
-- The toolbar now has 30 tools and scrolls on short screens; tidy in M7.
+- The toolbar now has 42 tools and scrolls on short screens; tidy in M7.
 - Running many days at once from the console stacks "Autosaved." toasts.
 - Bursts in the same water network each count all of that network's dry
   customers (attribution by network, decision 50), so two bursts in one
@@ -287,17 +367,16 @@ Nothing.
 - Traffic flows are two-way per tile; there are no junction delays or signals.
 - Road closures only apply while a crew is on site, not for the whole permit
   slot (decision 62). Night works only start at 20:00; crews do not stop at 06:00.
-- Clashes and overruns are flagged and counted but not fined (fines with the M6
-  economy).
+- Clashes and overruns are fined once each when flagged.
 - The congestion index compares trip times with free-flow times on the routes
   chosen, so it reads 1.00 for the first round after loading an M4 save.
 - Building a local road across an avenue replaces the avenue tile at the crossing
   (M1 road tool behaviour).
 - No condition overlay yet (M7 overlays); condition shows in the inspector.
-- Repairs are paid even when cash is negative; there is no income until M6.
+- Repairs are paid even when cash is negative; loans are the remedy.
 - `rebuildNetwork` takes about 2 ms on a dense power grid and runs on every
   cable fault and repair; make it incremental in M8 if it shows in profiles.
-- Crew numbers are fixed per depot (2); department budgets set them in M6.
+- Crews on duty follow department budgets (1–3 per depot or fire station).
 - Crew labels use global crew ids ("Water crew 3").
 - `npm audit` reports 4 moderate advisories in build-time dependencies
   (minimatch via vite-plugin-pwa/workbox-build). Nothing ships to the browser;
@@ -305,31 +384,24 @@ Nothing.
 
 ## Exact next step
 
-Start **milestone 6** (services, landmarks, events, pollution, economy,
-happiness, complaints). Suggested order, cutting from the end of the spec's list
-if the session runs short (events calendar first, then landmarks other than the
-stadium and shopping centre, then noise pollution):
+Start **milestone 7** (overlays, dashboard, menus and settings, scenarios, UI
+polish):
 
-1. Economy first (`src/data/economy.json`, `src/sim/economy.ts`): taxes per zone
-   (farms at low rates plus `exportPerDay`), utility tariffs, running costs (crews,
-   energy, maintenance), department budgets for roads, water, power and services
-   (setting crew numbers per depot and the maintenance backlog), monthly accounts
-   (30-day months) and loans. Fines for licence breaches, spills, permit clashes
-   and overruns. Budget panel in the HUD.
-2. Services: fire, police, health (hospital = priority 0 customer), schools, waste
-   (depots, recycling centre, landfill, missed collections). Coverage by road
-   travel time from `cache.traffic.timeSec` (Dijkstra from each station, sliced,
-   saved cursor). Fire: hydrants on mains, firefighting flow lowering local
-   pressure through the water solve (test it), fire growth by building size,
-   response time and flow; random building fires.
-3. Landmarks (stadium, shopping centre first) as facilities with footprints,
-   utility demand and jobs; events calendar with traffic (extra trips to the
-   venue in the trip table), power, water, police and waste spikes.
-4. Pollution (air from industry, power plants, highways and traffic flows; noise)
-   spreading with distance; land value; growth using land value and services.
-5. Happiness (services, outages, commute times from `traffic.commute`, pollution)
-   and a complaints feed from real events ("No water on … for 3 hours").
-6. Tests: budget calculations, coverage by travel time, firefighting flow
-   lowering pressure, fire growth, pollution spread, happiness, save round-trip,
-   determinism; update ARCHITECTURE.md (tick order: services → growth → pollution
-   → economy → happiness), CLAUDE.md and this file.
+1. Overlay switcher for power, water pressure, wastewater, traffic, condition,
+   coverage (per service kind, from `cache.services.minutes` and
+   `snapshot.city.serviceLevel`), pollution (air/noise from `state.pollution` via
+   `snapshot.city.pollution`), land value and roadworks; colour-blind safe ramps;
+   buildings dim (extend `render/layers` like the water and traffic overlays).
+2. KPI dashboard: supply interruptions, customer-minutes, MTTR, congestion index,
+   cash flow (`economy.history`, month ledger), happiness, fire response.
+3. Main menu (new game, load, scenarios, settings) and a settings panel
+   (graphics, shadows, autosave, controls list; sandbox: starting cash,
+   difficulty, weather events, random fires via `rules.fires`).
+4. Scenarios as JSON in `src/data/scenarios/` with a seeded city generator (size,
+   age profile, zone mix, network condition), constraints, objectives and timed
+   events: heatwave, cold snap, ageing network, commercial fire (use `startFire()`
+   on a shopping centre; add power isolation, cordon closures and evacuation).
+   Update CLAUDE.md's scenario guide.
+5. UI polish: toolbar grouping/collapse (42 tools), panels not overlapping,
+   pause while modals are open (decision 15).
+6. Tests, docs, PROGRESS.md.

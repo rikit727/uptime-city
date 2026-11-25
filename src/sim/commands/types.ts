@@ -5,7 +5,9 @@
  */
 import type {
   CrewType,
+  Department,
   DensityId,
+  EventMeasure,
   FacilityId,
   LineTypeId,
   MainTypeId,
@@ -112,6 +114,39 @@ export interface SendBottledWaterCommand {
   incident: number;
 }
 
+/** Set a department's budget level (economy.json `budgetLevels`, 0.5 to 1.5). */
+export interface SetBudgetCommand {
+  type: 'setBudget';
+  department: Department;
+  level: number;
+}
+
+/** Set a zone's tax rate multiplier (economy.json `taxes.rateLevels`). */
+export interface SetTaxRateCommand {
+  type: 'setTaxRate';
+  zone: ZoneId;
+  rate: number;
+}
+
+/** Borrow one of the amounts on offer (economy.json `loans`). */
+export interface TakeLoanCommand {
+  type: 'takeLoan';
+  amount: number;
+}
+
+/** Pay off a loan early. */
+export interface RepayLoanCommand {
+  type: 'repayLoan';
+  loan: number;
+}
+
+/** Book (and pay for) an arrangement for an upcoming event. */
+export interface PrepareEventCommand {
+  type: 'prepareEvent';
+  event: number;
+  measure: EventMeasure;
+}
+
 export type Command =
   | BuildRoadCommand
   | ZoneCommand
@@ -124,7 +159,12 @@ export type Command =
   | AssignCrewCommand
   | CancelOrderCommand
   | SendBottledWaterCommand
-  | CombinePermitsCommand;
+  | CombinePermitsCommand
+  | SetBudgetCommand
+  | SetTaxRateCommand
+  | TakeLoanCommand
+  | RepayLoanCommand
+  | PrepareEventCommand;
 export type CommandType = Command['type'];
 
 /**

@@ -7,6 +7,7 @@
 import { ASSETS, buildingDef } from './data';
 import type { DepotDef } from './data';
 import { planRoute, positionAlong } from './routing';
+import { crewSpecOf } from './services';
 import type { Building, Crew, SimState } from './state';
 import type { CrewType } from './types';
 import { tileIndex } from './world';
@@ -32,24 +33,26 @@ export function depotExitTile(state: SimState, b: Building): number {
   return tileIndex(w, b.x, b.y);
 }
 
-/** Add the crews of a newly placed depot. */
-export function createDepotCrews(state: SimState, depot: Building): void {
-  const def = depotDefOf(depot);
-  if (!def) return;
-  const tile = depotExitTile(state, depot);
-  for (let k = 0; k < def.crews; k++) {
-    state.crews.push({
-      id: state.assets.nextCrewId++,
-      type: def.crewType,
-      depot: depot.id,
-      status: 'idle',
-      orderId: 0,
-      path: [],
-      departMinute: 0,
-      arriveMinute: 0,
-      tile,
-    });
-  }
+/** Add one crew of a type at a depot or fire station (kept in ascending id order). */
+export function createCrew(state: SimState, depot: Building, type: CrewType): void {
+  state.crews.push({
+    id: state.assets.nextCrewId++,
+    type,
+    depot: depot.id,
+    status: 'idle',
+    orderId: 0,
+    path: [],
+    departMinute: 0,
+    arriveMinute: 0,
+    tile: depotExitTile(state, depot),
+  });
+}
+
+/** Add the crews of a newly placed depot or fire station (as many as its budget allows). */
+export function createDepotCrews(state: SimState, depot: Building, count?: number): void {
+  const spec = crewSpecOf(depot);
+  if (!spec) return;
+  for (let k = 0; k < (count ?? spec.crews); k++) createCrew(state, depot, spec.type);
 }
 
 export const isMoving = (c: Crew): boolean => c.status === 'enRoute' || c.status === 'returning';
@@ -74,7 +77,8 @@ export function crewPosition(
 export function sendCrew(state: SimState, c: Crew, to: number): void {
   const from = crewPosition(state, c).tile;
   const route = planRoute(state.world, from, to, state.cache.traffic.crewSlow);
-  const mobilise = c.status === 'idle' ? ASSETS.crews.mobiliseMinutes : 0;
+  const mobilise =
+    c.status === 'idle' ? (ASSETS.crews.mobiliseByType[c.type] ?? ASSETS.crews.mobiliseMinutes) : 0;
   c.path = route.path;
   c.departMinute = state.minute + mobilise;
   c.arriveMinute = c.departMinute + Math.max(1, Math.ceil(route.minutes));
