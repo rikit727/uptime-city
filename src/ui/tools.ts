@@ -8,6 +8,7 @@ export type ToolId =
   | { kind: 'line'; line: LineTypeId }
   | { kind: 'main'; main: MainTypeId }
   | { kind: 'facility'; facility: FacilityId }
+  | { kind: 'maintain' }
   | { kind: 'bulldoze' };
 
 export interface ToolDef {
@@ -15,8 +16,10 @@ export interface ToolDef {
   label: string;
   /** Keyboard shortcut (KeyboardEvent.code) and its display label. */
   code: string;
+  /** The shortcut needs Shift held. */
+  shift?: boolean;
   keyLabel: string;
-  group: 'select' | 'roads' | 'zones' | 'power' | 'water' | 'demolish';
+  group: 'select' | 'roads' | 'zones' | 'power' | 'water' | 'maintain' | 'demolish';
   tool: ToolId;
   swatch?: string;
 }
@@ -213,6 +216,41 @@ export const TOOLS: readonly ToolDef[] = [
     keyLabel: 'Y',
     group: 'water',
     tool: { kind: 'facility', facility: 'sewageWorks' },
+  },
+  {
+    key: 'maintain',
+    label: 'Plan maintenance',
+    code: 'Semicolon',
+    keyLabel: ';',
+    group: 'maintain',
+    tool: { kind: 'maintain' },
+  },
+  {
+    key: 'facility:roadsDepot',
+    label: 'Highways depot',
+    code: 'Digit1',
+    shift: true,
+    keyLabel: '⇧1',
+    group: 'maintain',
+    tool: { kind: 'facility', facility: 'roadsDepot' },
+  },
+  {
+    key: 'facility:waterDepot',
+    label: 'Water depot',
+    code: 'Digit2',
+    shift: true,
+    keyLabel: '⇧2',
+    group: 'maintain',
+    tool: { kind: 'facility', facility: 'waterDepot' },
+  },
+  {
+    key: 'facility:powerDepot',
+    label: 'Electricity depot',
+    code: 'Digit3',
+    shift: true,
+    keyLabel: '⇧3',
+    group: 'maintain',
+    tool: { kind: 'facility', facility: 'powerDepot' },
   },
   {
     key: 'bulldoze',

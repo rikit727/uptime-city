@@ -4,8 +4,16 @@ export type { LoggedCommand, Revisions, SimSnapshot } from './simulation';
 export type { Command, CommandPlan, CommandResult, CommandType, Layer } from './commands';
 export type { SimEvent } from './events';
 export type {
+  AssetKpis,
+  AssetRef,
+  AssetsState,
   Building,
+  Crew,
+  CrewStatus,
   Estate,
+  FaultCache,
+  Incident,
+  WorkOrder,
   GameRules,
   NewGameOptions,
   PowerNetwork,
@@ -29,6 +37,17 @@ export type { CityTotals } from './growth';
 export { availableMW, temperatureFactor } from './power';
 export { LPS_PER_MLD, isFarm, nearRiver, serviceTile, sewerTile, waterDefOf } from './water';
 export { daylight, solarElevation } from './weather';
+export {
+  FAULT,
+  ageYears,
+  assetKey,
+  conditionBand,
+  facilityAssetDef,
+  failureProbability,
+  tileClassAt,
+} from './assets';
+export { isOpen, isWaterIncident, mttrMinutes, severityName } from './incidents';
+export { crewPosition, depotDefOf } from './crews';
 export * from './data';
 export * from './time';
 export * from './types';

@@ -89,11 +89,13 @@ export function buildingsUnder(
   facilityTiles: Set<number>;
   powerTiles: Set<number>;
   waterTiles: Set<number>;
+  depotTiles: Set<number>;
 } {
   const grown = new Set<number>();
   const facilityTiles = new Set<number>();
   const powerTiles = new Set<number>();
   const waterTiles = new Set<number>();
+  const depotTiles = new Set<number>();
   for (const t of tiles) {
     const id = state.cache.buildingAt[t] ?? 0;
     if (id === 0) continue;
@@ -101,10 +103,21 @@ export function buildingsUnder(
     const def = buildingDef(b.code);
     if (def?.role === 'facility') {
       facilityTiles.add(t);
-      (def.utility === 'power' ? powerTiles : waterTiles).add(t);
+      (def.utility === 'power'
+        ? powerTiles
+        : def.utility === 'water'
+          ? waterTiles
+          : depotTiles
+      ).add(t);
     } else grown.add(id);
   }
-  return { grown: [...grown].sort((a, b) => a - b), facilityTiles, powerTiles, waterTiles };
+  return {
+    grown: [...grown].sort((a, b) => a - b),
+    facilityTiles,
+    powerTiles,
+    waterTiles,
+    depotTiles,
+  };
 }
 
 /** Demolition cost for buildings: per footprint tile. */

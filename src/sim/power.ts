@@ -15,6 +15,7 @@
  * `priorityNames`, 0 kept longest), and within a priority by a rota block that
  * moves on every `rota.minutes`, so outages roll round the city.
  */
+import { FAULT } from './assets';
 import { POWER, buildingDef } from './data';
 import type { BuildingDef, FacilityDef, GrownBuildingDef, WaterFacilityDef } from './data';
 import { centreOf, defOf, residentsOf } from './buildings';
@@ -45,9 +46,13 @@ export function rebuildNetwork(state: SimState): void {
   const cache = state.cache;
   // Node capacity per tile: line rating, Infinity for facility tiles, 0 = not a node.
   const cap = new Float64Array(n);
+  const fault = cache.faults.tile;
+  const offline = cache.faults.offline;
   for (let i = 0; i < n; i++) {
     const code = w.power[i]!;
-    if (code !== 0) cap[i] = POWER.lines.find((l) => l.code === code)?.capacityMW ?? 0;
+    // A faulted line tile (or one being worked on) is not part of the network.
+    if (code !== 0 && (fault[i]! & FAULT.LINE_OFF) === 0)
+      cap[i] = POWER.lines.find((l) => l.code === code)?.capacityMW ?? 0;
   }
   const facilities: Building[] = [];
   for (const b of state.buildings) {
@@ -70,7 +75,8 @@ export function rebuildNetwork(state: SimState): void {
   const nb: number[] = [];
 
   // Islands by flood fill.
-  const island = new Int32Array(n);
+  const island = cache.network.islandAt;
+  island.fill(0);
   let islandCount = 0;
   const stack: number[] = [];
   for (const f of facilities) {
@@ -100,7 +106,9 @@ export function rebuildNetwork(state: SimState): void {
     facilities: fs,
     generationMW: fs.reduce((sum, f) => {
       const def = facilityDefOf(f)!;
-      return def.kind === 'substation' || def.kind === 'battery' ? sum : sum + def.capacityMW;
+      return def.kind === 'substation' || def.kind === 'battery' || offline.has(f.id)
+        ? sum
+        : sum + def.capacityMW;
     }, 0),
   }));
 
@@ -116,7 +124,7 @@ export function rebuildNetwork(state: SimState): void {
   for (const r of ratings) {
     seen.fill(0);
     for (const f of facilities) {
-      if (!isGenerator(facilityDefOf(f)!)) continue;
+      if (!isGenerator(facilityDefOf(f)!) || offline.has(f.id)) continue;
       const t0 = tileIndex(w, f.x, f.y);
       if (seen[t0]) continue;
       seen[t0] = 1;
@@ -135,7 +143,7 @@ export function rebuildNetwork(state: SimState): void {
       feedMW.set(s.id, Math.min(r, facilityDefOf(s)!.capacityMW));
     }
   }
-  for (const s of substations) if (!feedMW.has(s.id)) feedMW.set(s.id, 0);
+  for (const s of substations) if (!feedMW.has(s.id) || offline.has(s.id)) feedMW.set(s.id, 0);
 
   // Coverage: nearest substation within its radius (ties go to the lower id).
   const coverage = cache.network.coverage;
@@ -234,6 +242,7 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
   const consumers: Consumer[][] = net.islands.map(() => []);
   const buildings = state.buildings;
   const served = new Uint8Array(buildings.length);
+  const offline = cache.faults.offline;
   let changed = false;
 
   // Per-zone load factor (time of day and temperature) is the same for every building.
@@ -269,6 +278,7 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
 
   cache.outputMW.clear();
   let islandShed = 0;
+  const islandLineLoad = new Uint8Array(net.islands.length + 1);
   net.islands.forEach((isl, k) => {
     const list = consumers[k]!;
     let renewAvail = 0;
@@ -277,6 +287,7 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
     const batteries: { b: Building; def: FacilityDef }[] = [];
     for (const f of isl.facilities) {
       const def = facilityDefOf(f)!;
+      if (offline.has(f.id)) continue;
       if (def.kind === 'battery') {
         batteries.push({ b: f, def });
         dischargeAvail += Math.min(def.capacityMW, f.storedMWh / dtH);
@@ -290,9 +301,11 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
     for (const c of list) subLoad.set(c.sub, (subLoad.get(c.sub) ?? 0) + c.mw);
     const subsOk = [...subLoad].every(([sub, mw]) => mw <= (net.feedMW.get(sub) ?? 0));
     let servedMW = 0;
+    const subServed = new Map<number, number>();
     if (demand <= available && subsOk) {
       for (const c of list) served[c.k] = 1;
       servedMW = demand;
+      for (const [sub, mw] of subLoad) subServed.set(sub, mw);
     } else {
       const order = [...list].sort((a, b) => a.key - b.key || a.k - b.k);
       const subLeft = new Map<number, number>();
@@ -305,9 +318,21 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
         subLeft.set(c.sub, sl - c.mw);
         served[c.k] = 1;
         servedMW += c.mw;
+        subServed.set(c.sub, (subServed.get(c.sub) ?? 0) + c.mw);
       }
       islandShed += demand - servedMW;
     }
+    // Wear: substations by load against capacity, lines by the hardest-drawn substation's feed.
+    let lineLoading = 0;
+    for (const f of isl.facilities) {
+      const def = facilityDefOf(f)!;
+      if (def.kind !== 'substation') continue;
+      const mw = subServed.get(f.id) ?? 0;
+      if (def.capacityMW > 0) f.peakLoad = Math.max(f.peakLoad, mw / def.capacityMW);
+      const feed = net.feedMW.get(f.id) ?? 0;
+      if (feed > 0) lineLoading = Math.max(lineLoading, mw / feed);
+    }
+    islandLineLoad[isl.id] = Math.min(255, Math.round(lineLoading * 100));
 
     // Meet the served load: renewables, then gas, then batteries.
     const renewUsed = Math.min(servedMW, renewAvail);
@@ -325,6 +350,7 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
         b.storedMWh = Math.max(0, b.storedMWh - out * dtH);
         discharge -= out;
         cache.outputMW.set(b.id, out);
+        if (def.capacityMW > 0) b.peakLoad = Math.max(b.peakLoad, out / def.capacityMW);
         continue;
       }
       const room = ((def.storageMWh ?? 0) - b.storedMWh) / (eff * dtH);
@@ -341,12 +367,16 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
     // Share generation between plants in proportion to what each could give.
     for (const f of isl.facilities) {
       const def = facilityDefOf(f)!;
-      if (def.kind === 'gas')
-        cache.outputMW.set(f.id, gasCap > 0 ? (gasTotal * def.capacityMW) / gasCap : 0);
+      let out = -1;
+      if (offline.has(f.id)) out = 0;
+      else if (def.kind === 'gas') out = gasCap > 0 ? (gasTotal * def.capacityMW) / gasCap : 0;
       else if (def.kind === 'solar' || def.kind === 'wind') {
         const a = availableMW(state, def);
-        cache.outputMW.set(f.id, renewAvail > 0 ? (renewTotal * a) / renewAvail : 0);
+        out = renewAvail > 0 ? (renewTotal * a) / renewAvail : 0;
       }
+      if (out < 0) continue;
+      cache.outputMW.set(f.id, out);
+      if (def.capacityMW > 0) f.peakLoad = Math.max(f.peakLoad, out / def.capacityMW);
     }
     const stored = batteries.reduce((s, x) => s + x.b.storedMWh, 0);
     stats.capacityMW += isl.generationMW;
@@ -378,6 +408,15 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
   }
   stats.shedMW = islandShed;
   cache.power = stats;
+  // Line wear: every line tile carries its island's loading.
+  if (net.islands.length > 0) {
+    const lineLoad = w.peakLoad.line;
+    for (let t = 0; t < w.power.length; t++) {
+      if (w.power[t] === 0) continue;
+      const pct = islandLineLoad[net.islandAt[t]!] ?? 0;
+      if (pct > lineLoad[t]!) lineLoad[t] = pct;
+    }
+  }
 
   const shedding = islandShed > 1e-6;
   if (shedding && !cache.shedding) {

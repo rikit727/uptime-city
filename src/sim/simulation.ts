@@ -13,8 +13,12 @@ import type { NewGameOptions, SimState } from './state';
 import { SYSTEMS } from './systems';
 import type { TickContext } from './systems';
 import type {
+  AssetsState,
   Building,
+  Crew,
   Estate,
+  FaultCache,
+  Incident,
   GameRules,
   PowerNetwork,
   PowerStats,
@@ -22,6 +26,7 @@ import type {
   WaterState,
   WaterStats,
   WeatherState,
+  WorkOrder,
 } from './state';
 import type { ZoneId } from './types';
 import type { WorldState } from './world';
@@ -64,6 +69,12 @@ export interface SimSnapshot {
   readonly waterLayout: Readonly<WaterLayout>;
   readonly waterFlowLps: ReadonlyMap<number, number>;
   readonly waterUseLps: ReadonlyMap<number, number>;
+  /** Asset bookkeeping and KPIs, incidents (open and recent), work orders, crews, fault flags. */
+  readonly assets: Readonly<AssetsState>;
+  readonly incidents: readonly Incident[];
+  readonly workOrders: readonly WorkOrder[];
+  readonly crews: readonly Crew[];
+  readonly faults: Readonly<FaultCache>;
 }
 
 export class Simulation {
@@ -75,6 +86,7 @@ export class Simulation {
     power: 0,
     supply: 0,
     water: 0,
+    assets: 0,
   };
   readonly commandLog: LoggedCommand[] = [];
   private events: SimEvent[] = [];
@@ -153,6 +165,11 @@ export class Simulation {
       waterLayout: s.cache.water,
       waterFlowLps: s.cache.waterFlowLps,
       waterUseLps: s.cache.waterUseLps,
+      assets: s.assets,
+      incidents: s.incidents,
+      workOrders: s.workOrders,
+      crews: s.crews,
+      faults: s.cache.faults,
     };
   }
 

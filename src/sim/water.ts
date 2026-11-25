@@ -27,7 +27,8 @@
  * overflows, city figures and events). Each step reads only saved state, so a
  * save loaded mid-round continues identically.
  */
-import { GAME, WATER, buildingDef, mainTypeByCode } from './data';
+import { FAULT } from './assets';
+import { ASSETS, GAME, WATER, buildingDef, mainTypeByCode } from './data';
 import type { GrownBuildingDef, WaterFacilityDef } from './data';
 import { grownDefOf, residentsOf } from './buildings';
 import type { SimEvent } from './events';
@@ -56,9 +57,9 @@ export const waterDefOf = (b: Building): WaterFacilityDef | undefined => {
   return def?.role === 'facility' && def.utility === 'water' ? def : undefined;
 };
 
-/** Water facilities run without power only if they draw none. */
-const running = (b: Building, def: WaterFacilityDef): boolean =>
-  def.powerKw <= 0 || b.unpoweredMinutes === 0;
+/** In service (not failed or under maintenance) and powered, unless it draws no power. */
+export const running = (state: SimState, b: Building, def: WaterFacilityDef): boolean =>
+  !state.cache.faults.offline.has(b.id) && (def.powerKw <= 0 || b.unpoweredMinutes === 0);
 
 export const isFarm = (def: GrownBuildingDef): boolean => def.zone === 'agricultural';
 
@@ -401,6 +402,7 @@ function solveHydraulics(
   const netAt = L.netAt;
   const zoneAt = L.zoneAt;
   const water = w.water;
+  const fault = state.cache.faults.tile;
   const width = w.width;
   const id = net.id;
   const hasBoosters = boosters.size > 0;
@@ -425,6 +427,8 @@ function solveHydraulics(
       const t = heap.pop();
       const h = heap.lastHead;
       if (h < head[t]!) continue;
+      // A burst main takes water in (and leaks it) but passes none on.
+      if ((fault[t]! & FAULT.BURST) !== 0) continue;
       const bt = hasBoosters ? boosters.get(t) : undefined;
       const x = t % width;
       nb[0] = x > 0 ? t - 1 : -1;
@@ -433,7 +437,7 @@ function solveHydraulics(
       nb[3] = t + width < n ? t + width : -1;
       for (let k = 0; k < 4; k++) {
         const m = nb[k]!;
-        if (m < 0 || netAt[m] !== id) continue;
+        if (m < 0 || netAt[m] !== id || (fault[m]! & FAULT.MAIN_OFF) !== 0) continue;
         let cand: number;
         const bm = hasBoosters ? boosters.get(m) : undefined;
         if (bm && bt && bm.id === bt.id) cand = h;
@@ -540,6 +544,16 @@ export function solveNetwork(state: SimState, net: WaterNetwork): WaterNetworkRe
     customers.push({ b, tile });
     cache.waterUseLps.set(b.id, q);
   }
+  // Unisolated bursts leak a share of their main's capacity.
+  let leak = 0;
+  const fault = cache.faults.tile;
+  for (const t of net.tiles) {
+    if ((fault[t]! & FAULT.BURST) === 0) continue;
+    const q = ASSETS.burstLeakFraction * (mainTypeByCode(w.water[t]!)?.capacityLps ?? 0);
+    demand[t] = demand[t]! + q;
+    leak += q;
+  }
+  D += leak;
 
   // Production: treatment output is limited by the intakes feeding it.
   let intakeCap = 0;
@@ -550,7 +564,7 @@ export function solveNetwork(state: SimState, net: WaterNetwork): WaterNetworkRe
   const boosters = new Map<number, { id: number; boostM: number }>();
   for (const fac of net.facilities) {
     const def = waterDefOf(fac)!;
-    const on = running(fac, def);
+    const on = running(state, fac, def);
     const cap = (def.capacityMlPerDay ?? 0) * LPS_PER_MLD;
     switch (def.kind) {
       case 'intake':
@@ -562,7 +576,8 @@ export function solveNetwork(state: SimState, net: WaterNetwork): WaterNetworkRe
         works.push({ b: fac, cap: on ? cap : 0, def });
         break;
       case 'storage':
-        stores.push({ b: fac, def });
+        if (!cache.faults.offline.has(fac.id)) stores.push({ b: fac, def });
+        else cache.waterFlowLps.set(fac.id, 0);
         break;
       case 'booster': {
         const [fw, fd] = def.footprint;
@@ -622,10 +637,16 @@ export function solveNetwork(state: SimState, net: WaterNetwork): WaterNetworkRe
     deficit = Math.max(0, need);
   }
   state.water.abstractedTodayMl += (produced * dt) / 1e6;
-  for (const k of works)
-    cache.waterFlowLps.set(k.b.id, worksCap > 0 ? (produced * k.cap) / worksCap : 0);
-  for (const k of intakes)
-    cache.waterFlowLps.set(k.b.id, intakeCap > 0 ? (produced * k.cap) / intakeCap : 0);
+  for (const k of works) {
+    const q = worksCap > 0 ? (produced * k.cap) / worksCap : 0;
+    cache.waterFlowLps.set(k.b.id, q);
+    if (k.cap > 0) k.b.peakLoad = Math.max(k.b.peakLoad, q / k.cap);
+  }
+  for (const k of intakes) {
+    const q = intakeCap > 0 ? (produced * k.cap) / intakeCap : 0;
+    cache.waterFlowLps.set(k.b.id, q);
+    if (k.cap > 0) k.b.peakLoad = Math.max(k.b.peakLoad, q / k.cap);
+  }
 
   // Pressure.
   const share = D > 0 ? deficit / D : 0;
@@ -633,9 +654,16 @@ export function solveNetwork(state: SimState, net: WaterNetwork): WaterNetworkRe
   for (const s of sources) s.head *= scale;
   const { head, flow } = solveHydraulics(state, net, demand, sources, boosters);
   const maxM = WATER.pressure.maxM;
+  const mainLoad = w.peakLoad.main;
   for (const t of net.tiles) {
     const h = head[t]!;
     w.pressure[t] = h === -Infinity ? 0 : Math.max(0, Math.min(maxM, Math.round(h)));
+    const code = w.water[t]!;
+    if (code !== 0) {
+      // Peak utilisation since the last daily decay (asset wear).
+      const pct = Math.min(255, Math.round(flow[t]! * INV_CAP[code]! * 100));
+      if (pct > mainLoad[t]!) mainLoad[t] = pct;
+    }
   }
   for (const [t, bst] of boosters) cache.waterFlowLps.set(bst.id, flow[t]!);
 
@@ -644,7 +672,7 @@ export function solveNetwork(state: SimState, net: WaterNetwork): WaterNetworkRe
     if (w.pressure[tile]! < WATER.pressure.noSupplyM) b.dryMinutes += interval;
     else b.dryMinutes = 0;
   }
-  return { demandLps: D, suppliedLps: D - deficit, productionLps: P };
+  return { demandLps: D, suppliedLps: D - deficit, productionLps: P, leakLps: leak };
 }
 
 // ---- finish the round -------------------------------------------------------------
@@ -677,6 +705,7 @@ export function finishRound(
     stats.demandLps += r.demandLps;
     stats.suppliedLps += r.suppliedLps;
     stats.productionLps += r.productionLps;
+    stats.leakageLps += r.leakLps;
   }
   const sewerFlow = new Float64Array(L.sewers.length + 1);
   const sewerRoof = new Float64Array(L.sewers.length + 1);
@@ -732,7 +761,7 @@ export function finishRound(
     let cap = 0;
     for (const b of s.works) {
       const def = waterDefOf(b)!;
-      if (running(b, def)) cap += (def.capacityMlPerDay ?? 0) * LPS_PER_MLD;
+      if (running(state, b, def)) cap += (def.capacityMlPerDay ?? 0) * LPS_PER_MLD;
     }
     if (s.works.length === 0) {
       stats.untreatedLps += dwf;
@@ -747,8 +776,9 @@ export function finishRound(
     stats.spillLps += inflow - treated;
     for (const b of s.works) {
       const def = waterDefOf(b)!;
-      const c = running(b, def) ? (def.capacityMlPerDay ?? 0) * LPS_PER_MLD : 0;
+      const c = running(state, b, def) ? (def.capacityMlPerDay ?? 0) * LPS_PER_MLD : 0;
       state.cache.waterFlowLps.set(b.id, cap > 0 ? (inflow * c) / cap : inflow / s.works.length);
+      if (c > 0) b.peakLoad = Math.max(b.peakLoad, Math.min(2, (inflow * c) / cap / c));
     }
   }
   const spilling = stats.spillLps > 1e-6;

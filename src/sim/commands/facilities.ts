@@ -1,6 +1,7 @@
 import { addBuilding } from '../buildings';
 import { facilityDef } from '../data';
 import type { AnyFacilityDef } from '../data';
+import { createDepotCrews } from '../crews';
 import { rebuildEstates } from '../estates';
 import { rebuildNetwork } from '../power';
 import type { SimState } from '../state';
@@ -31,7 +32,7 @@ function touchesWater(state: SimState, x: number, y: number, fw: number, fd: num
 }
 
 /**
- * Place a power or water facility. Its footprint must be clear land: no water,
+ * Place a power or water facility or a depot. Its footprint must be clear land: no water,
  * road, power line, water main or building. Zoning under it is removed. A river
  * intake must also sit on the riverbank.
  */
@@ -62,7 +63,7 @@ export function planPlaceFacility(state: SimState, cmd: PlaceFacilityCommand): C
       (clear ? affected : blocked).push(i);
     }
   }
-  const layer = def.utility === 'power' ? 'power' : 'water';
+  const layer = def.utility === 'depot' ? 'assets' : def.utility;
   const plan = finalisePlan(state, affected, blocked, def.cost, ['zone', 'building', layer], '');
   if (affected.length + blocked.length < fw * fd) return refuse(plan, 'Too close to the map edge.');
   if (blocked.length > 0) {
@@ -94,8 +95,9 @@ export function applyPlaceFacility(
     w.zone[i] = 0;
     w.density[i] = 0;
   }
-  addBuilding(state, def.code, cmd.at.x, cmd.at.y, 1);
+  const b = addBuilding(state, def.code, cmd.at.x, cmd.at.y, 1);
   if (rezoned) rebuildEstates(state);
   if (def.utility === 'power') rebuildNetwork(state);
-  else rebuildWater(state);
+  else if (def.utility === 'water') rebuildWater(state);
+  else createDepotCrews(state, b);
 }

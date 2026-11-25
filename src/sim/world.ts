@@ -4,7 +4,10 @@
  * overlay passes cheap.
  */
 import { Terrain } from './types';
-import type { TileCoord } from './types';
+import type { TileAssetLayer, TileCoord } from './types';
+
+/** One typed array per tile asset layer (road, main, line). */
+export type PerAssetLayer<T> = Record<TileAssetLayer, T>;
 
 export interface WorldState {
   readonly width: number;
@@ -26,7 +29,22 @@ export interface WorldState {
    * (0 = no water). Saved, because growth and supply status read it between solves.
    */
   readonly pressure: Uint8Array;
+  /** Asset condition per tile and layer, in hundredths of a point (0..10000; 0 where no asset). */
+  readonly condition: PerAssetLayer<Uint16Array>;
+  /** Day (1-based) each tile asset was laid, for its age (0 = none). */
+  readonly laid: PerAssetLayer<Uint16Array>;
+  /**
+   * Peak load share since the last daily decay, percent (main flow / capacity,
+   * line loading; road traffic from M5). Saved: decay reads it, then resets it.
+   */
+  readonly peakLoad: PerAssetLayer<Uint8Array>;
 }
+
+const perLayer = <T>(make: () => T): PerAssetLayer<T> => ({
+  road: make(),
+  main: make(),
+  line: make(),
+});
 
 export function createWorld(width: number, height: number): WorldState {
   const n = width * height;
@@ -40,6 +58,9 @@ export function createWorld(width: number, height: number): WorldState {
     power: new Uint8Array(n),
     water: new Uint8Array(n),
     pressure: new Uint8Array(n),
+    condition: perLayer(() => new Uint16Array(n)),
+    laid: perLayer(() => new Uint16Array(n)),
+    peakLoad: perLayer(() => new Uint8Array(n)),
   };
 }
 
@@ -56,5 +77,9 @@ export const coordOf = (w: WorldState, index: number): TileCoord => ({
 /** Distance in tiles from (x, y) to the nearest map edge (0 on the edge row). */
 export const edgeDistance = (w: WorldState, x: number, y: number): number =>
   Math.min(x, y, w.width - 1 - x, w.height - 1 - y);
+
+/** The world layer that holds a tile asset's class code. */
+export const assetCodeLayer = (w: WorldState, layer: TileAssetLayer): Uint8Array =>
+  layer === 'road' ? w.road : layer === 'main' ? w.water : w.power;
 
 export const isWater = (w: WorldState, i: number): boolean => w.terrain[i] === Terrain.Water;

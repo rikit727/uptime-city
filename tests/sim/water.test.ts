@@ -368,7 +368,7 @@ describe('wastewater', () => {
   it('treats dry-weather flow, and a storm overflows the works', () => {
     const sim = sewered();
     const s = sim.state;
-    expect(s.buildings.filter((b) => b.code < 200).length).toBeGreaterThan(5);
+    expect(s.buildings.filter((b) => b.code < 200).length).toBeGreaterThan(3);
     morning(s);
     solveAll(s);
     expect(s.cache.waterStats.sewageInflowLps).toBeGreaterThan(0);

@@ -2,6 +2,7 @@
  * Typed access to the JSON definitions in src/data. The simulation reads all
  * tunable numbers through this module so content can change without code changes.
  */
+import assetsJson from '../data/assets.json';
 import buildingsJson from '../data/buildings.json';
 import gameJson from '../data/game.json';
 import growthJson from '../data/growth.json';
@@ -12,15 +13,19 @@ import weatherJson from '../data/weather.json';
 import zonesJson from '../data/zones.json';
 import { SEASON_ORDER } from './types';
 import type {
+  CrewType,
   DensityId,
+  DepotId,
   FacilityId,
   FacilityKind,
   FieldStyle,
+  IncidentKind,
   LineTypeId,
   MainTypeId,
   PowerFacilityId,
   RoadClassId,
   SeasonId,
+  TileAssetLayer,
   WaterFacilityId,
   WaterFacilityKind,
   WeatherEventId,
@@ -205,7 +210,19 @@ export interface WaterFacilityDef extends BuildingDefBase {
   boostM?: number;
 }
 
-export type AnyFacilityDef = FacilityDef | WaterFacilityDef;
+/** A maintenance depot that houses crews (assets.json `depots`). */
+export interface DepotDef extends BuildingDefBase {
+  role: 'facility';
+  utility: 'depot';
+  id: DepotId;
+  kind: 'depot';
+  crewType: CrewType;
+  /** Crews based here. */
+  crews: number;
+  cost: number;
+}
+
+export type AnyFacilityDef = FacilityDef | WaterFacilityDef | DepotDef;
 export type BuildingDef = GrownBuildingDef | AnyFacilityDef;
 
 export interface LineTypeDef {
@@ -324,6 +341,96 @@ export const WATER: WaterConfig = {
   })),
 };
 
+// ---- assets, incidents and crews ------------------------------------------------
+
+export interface WorkSpec {
+  minutes: number;
+  cost: number;
+}
+
+interface AssetClassBase {
+  crew: CrewType;
+  /** Condition points lost per day. */
+  decayPerDay: number;
+  /** Extra points per day at full load, scaled by (load share)². */
+  loadDecayPerDay: number;
+  failureScale: number;
+  /** Failure-rate multipliers while a weather event is on. */
+  weather?: Partial<Record<WeatherEventId, number>>;
+  repair: WorkSpec;
+  maintenance: WorkSpec & { name: string };
+}
+
+/** A road class, main size or line type as an asset. */
+export interface TileAssetClass extends AssetClassBase {
+  id: string;
+  layer: TileAssetLayer;
+  /** Road class, main or line code in that layer. */
+  code: number;
+  name: string;
+  failure: IncidentKind;
+}
+
+/** A facility kind as an asset (power and water facilities; depots do not decay). */
+export interface FacilityAssetClass extends AssetClassBase {
+  kind: FacilityKind | WaterFacilityKind;
+}
+
+export interface IncidentDef {
+  name: string;
+  /** Base severity, 1 (low) to 4 (critical). */
+  severity: number;
+  /** Target time to resolve; 0 = no SLA. */
+  slaMinutes: number;
+}
+
+export interface AssetsConfig {
+  /** [condition, daily failure probability] pairs, condition descending. */
+  failureCurve: [number, number][];
+  repairRestoresTo: number;
+  maintenanceRestoresTo: number;
+  excavationRoadWear: number;
+  /** Leak from an unisolated burst, as a share of the main's capacity. */
+  burstLeakFraction: number;
+  householdSize: number;
+  maintenanceThresholds: number[];
+  resolvedKept: number;
+  migrationCondition: number;
+  crews: { mobiliseMinutes: number; offRoadKmh: number; roadSearchRadius: number };
+  bottledWater: { cost: number };
+  severity: { names: string[]; customerSteps: number[]; priorityCustomerBump: number };
+  priorityNames: string[];
+  incidents: Record<IncidentKind, IncidentDef>;
+  tileClasses: TileAssetClass[];
+  facilityClasses: FacilityAssetClass[];
+  depots: DepotDef[];
+}
+
+const rawAssets = assetsJson as unknown as Omit<AssetsConfig, 'depots'> & {
+  depots: Omit<DepotDef, 'role' | 'utility'>[];
+};
+export const ASSETS: AssetsConfig = {
+  ...rawAssets,
+  depots: rawAssets.depots.map((d): DepotDef => ({ ...d, role: 'facility', utility: 'depot' })),
+};
+
+const tileClassByKey = new Map<string, TileAssetClass>();
+for (const c of ASSETS.tileClasses) {
+  const key = `${c.layer}:${c.code}`;
+  if (tileClassByKey.has(key)) throw new Error(`Duplicate asset class ${key}`);
+  tileClassByKey.set(key, c);
+}
+const facilityClassByKind = new Map<string, FacilityAssetClass>();
+for (const c of ASSETS.facilityClasses) facilityClassByKind.set(c.kind, c);
+
+/** Asset class of a road, main or line code (undefined for code 0). */
+export const tileAssetClass = (layer: TileAssetLayer, code: number): TileAssetClass | undefined =>
+  tileClassByKey.get(`${layer}:${code}`);
+
+/** Asset class of a facility kind (undefined for depots). */
+export const facilityAssetClass = (kind: string): FacilityAssetClass | undefined =>
+  facilityClassByKind.get(kind);
+
 export interface GrowthConfig {
   scanTilesPerTick: number;
   spawnChance: number;
@@ -376,7 +483,11 @@ const zoneById = indexBy(ZONES.types, (z) => z.id);
 const zoneByCode = indexBy(ZONES.types, (z) => z.code);
 const densityById = indexBy(ZONES.densities, (d) => d.id);
 const densityByCode = indexBy(ZONES.densities, (d) => d.code);
-const allFacilities: AnyFacilityDef[] = [...POWER.facilities, ...WATER.facilities];
+const allFacilities: AnyFacilityDef[] = [
+  ...POWER.facilities,
+  ...WATER.facilities,
+  ...ASSETS.depots,
+];
 const allBuildings: BuildingDef[] = [...BUILDINGS.types, ...allFacilities];
 const buildingByCode = indexBy(allBuildings, (b) => b.code);
 indexBy(allBuildings, (b) => b.id);
@@ -412,6 +523,7 @@ export const buildingDef = (code: number): BuildingDef | undefined => buildingBy
 /** Any facility (power or water) by id. */
 export function facilityDef(id: PowerFacilityId): FacilityDef;
 export function facilityDef(id: WaterFacilityId): WaterFacilityDef;
+export function facilityDef(id: DepotId): DepotDef;
 export function facilityDef(id: FacilityId): AnyFacilityDef;
 export function facilityDef(id: FacilityId): AnyFacilityDef {
   return must(facilityById.get(id), `facility ${id}`);

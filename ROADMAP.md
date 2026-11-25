@@ -24,6 +24,9 @@ with the milestone and reason.
 - Buildings redeveloping in place to a higher density when demand and land
   value allow, instead of needing demolition and regrowth.
 - Weekday/weekend demand patterns (the v1 calendar has no days of the week).
+- Assets: pipe and cable materials with their own failure curves, age-driven
+  decay acceleration, condition surveys (unknown condition until inspected),
+  crew skills and overtime, mutual aid between depots.
 - Water: booster pumps with a flow capacity and energy use that scales with
   the flow and head they lift (v1 boosters add a fixed head at a constant
   load); flows shared across looped mains (v1 routes each customer along one

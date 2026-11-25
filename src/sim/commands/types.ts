@@ -4,6 +4,7 @@
  * their tick so a game can be replayed exactly.
  */
 import type {
+  CrewType,
   DensityId,
   FacilityId,
   LineTypeId,
@@ -57,22 +58,69 @@ export interface BuildMainCommand {
   to: TileCoord;
 }
 
+/**
+ * Raise planned maintenance for every asset in a rectangle whose condition is
+ * below `below` (0..101; 101 = everything), optionally only one crew type's.
+ * Each asset gets one work order; assets that already have one are skipped.
+ */
+export interface RaiseMaintenanceCommand {
+  type: 'raiseMaintenance';
+  from: TileCoord;
+  to: TileCoord;
+  below: number;
+  crew?: CrewType;
+  /** Limit to a single asset on the tile (road, main, line or the facility there). */
+  only?: 'road' | 'main' | 'line' | 'facility';
+}
+
+/** Change a work order's priority (1 emergency .. 4 routine). */
+export interface SetOrderPriorityCommand {
+  type: 'setOrderPriority';
+  order: number;
+  priority: number;
+}
+
+/** Send a particular crew to a work order (diverting it if it is on its way elsewhere). */
+export interface AssignCrewCommand {
+  type: 'assignCrew';
+  crew: number;
+  order: number;
+}
+
+/** Cancel planned maintenance (refunded). Repairs cannot be cancelled. */
+export interface CancelOrderCommand {
+  type: 'cancelOrder';
+  order: number;
+}
+
+/** Send bottled water to priority customers cut off by a water incident. */
+export interface SendBottledWaterCommand {
+  type: 'sendBottledWater';
+  incident: number;
+}
+
 export type Command =
   | BuildRoadCommand
   | ZoneCommand
   | BulldozeCommand
   | PlaceFacilityCommand
   | BuildLineCommand
-  | BuildMainCommand;
+  | BuildMainCommand
+  | RaiseMaintenanceCommand
+  | SetOrderPriorityCommand
+  | AssignCrewCommand
+  | CancelOrderCommand
+  | SendBottledWaterCommand;
 export type CommandType = Command['type'];
 
 /**
  * Which state layers changed, so renderers know what to rebuild. `building`:
  * buildings added or removed; `power`: lines or facilities; `supply`: which
  * buildings have power (lights at night); `water`: mains, water facilities or
- * pressures.
+ * pressures; `assets`: incidents, work orders, crews or asset condition.
  */
-export type Layer = 'terrain' | 'road' | 'zone' | 'building' | 'power' | 'supply' | 'water';
+export type Layer =
+  'terrain' | 'road' | 'zone' | 'building' | 'power' | 'supply' | 'water' | 'assets';
 
 /**
  * The outcome of planning a command against the current state, without changing it.

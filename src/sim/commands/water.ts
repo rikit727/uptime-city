@@ -2,6 +2,8 @@ import { WATER, mainType } from '../data';
 import { rebuildEstates } from '../estates';
 import { roadPath } from '../geometry';
 import type { SimState } from '../state';
+import { layTileAsset } from '../assets';
+import { retireAsset } from '../incidents';
 import { rebuildWater } from '../water';
 import { isWater } from '../world';
 import {
@@ -32,7 +34,7 @@ export function planBuildMain(state: SimState, cmd: BuildMainCommand): CommandPl
   }
   const w = state.world;
   const path = indicesInBounds(state, roadPath(cmd.from, cmd.to));
-  const { grown, powerTiles, waterTiles } = buildingsUnder(state, path);
+  const { grown, powerTiles, waterTiles, depotTiles } = buildingsUnder(state, path);
   const affected: number[] = [];
   const blocked: number[] = [];
   let cost = 0;
@@ -54,6 +56,7 @@ export function planBuildMain(state: SimState, cmd: BuildMainCommand): CommandPl
     `There is already a main this size or larger here.`,
   );
   if (powerTiles.size > 0) return refuse(plan, 'A power facility is in the way.');
+  if (depotTiles.size > 0) return refuse(plan, 'A depot is in the way.');
   return grown.length > 0 ? refuse(plan, 'A building is in the way. Bulldoze it first.') : plan;
 }
 
@@ -62,7 +65,9 @@ export function applyBuildMain(state: SimState, cmd: BuildMainCommand, plan: Com
   const w = state.world;
   let rezoned = false;
   for (const i of plan.affected) {
+    if (w.water[i] !== 0) retireAsset(state, { layer: 'main', id: i });
     w.water[i] = code;
+    layTileAsset(state, 'main', i);
     if (w.zone[i] !== 0) rezoned = true;
     w.zone[i] = 0;
     w.density[i] = 0;

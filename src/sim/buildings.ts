@@ -6,6 +6,7 @@
 import { buildingDef } from './data';
 import type { BuildingDef, GrownBuildingDef } from './data';
 import type { Building, SimState } from './state';
+import { dayOf } from './time';
 import { tileIndex } from './world';
 import type { WorldState } from './world';
 
@@ -61,6 +62,9 @@ export function addBuilding(
     storedMWh: 0,
     storedMl: 0,
     dryMinutes: 0,
+    condition: 100,
+    builtDay: dayOf(state.minute),
+    peakLoad: 0,
   };
   state.buildings.push(b);
   indexBuilding(state, b);

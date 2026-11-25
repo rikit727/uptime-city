@@ -6,11 +6,11 @@
  * the previous version to MIGRATIONS. Never edit an existing migration.
  */
 import { GAME_NAME } from '../config';
-import { Simulation, dayOf, deserializeState, serializeState } from '../sim';
+import { ASSETS, Simulation, dayOf, deserializeState, serializeState } from '../sim';
 import type { SerializedState } from '../sim';
 
 export const SAVE_FORMAT = 'uptime-city-save';
-export const CURRENT_SAVE_VERSION = 3;
+export const CURRENT_SAVE_VERSION = 4;
 
 export interface SaveMeta {
   gameName: string;
@@ -99,6 +99,60 @@ export const MIGRATIONS: Record<number, (save: RawSave) => RawSave> = {
           supplyAlert: false,
           priorityAlert: false,
         },
+      },
+    };
+  },
+  // v3 -> v4 (milestone 4): asset condition, age and load layers, building
+  // condition/built day/peak load, incidents, work orders, crews. Existing
+  // assets start at `assets.json: migrationCondition`, laid on the save's day.
+  3: (save) => {
+    const state = save.state as Record<string, unknown>;
+    const world = state.world as Record<string, unknown>;
+    const tiles = Number(world.width) * Number(world.height);
+    const day = dayOf(Number(state.minute));
+    const cond = Math.round(ASSETS.migrationCondition * 100);
+    const remap = (rle: number[], v: number) => rle.map((x, k) => (k % 2 === 0 && x !== 0 ? v : x));
+    const layers = (v: number) => ({
+      road: remap(world.road as number[], v),
+      main: remap(world.water as number[], v),
+      line: remap(world.power as number[], v),
+    });
+    return {
+      ...save,
+      version: 4,
+      state: {
+        ...state,
+        world: {
+          ...world,
+          condition: layers(cond),
+          laid: layers(day),
+          peakLoad: { road: [0, tiles], main: [0, tiles], line: [0, tiles] },
+        },
+        buildings: (state.buildings as unknown[][]).map((b) => [
+          ...b,
+          ASSETS.migrationCondition,
+          day,
+          0,
+        ]),
+        assets: {
+          cursor: 0,
+          nextIncidentId: 1,
+          nextOrderId: 1,
+          nextCrewId: 1,
+          kpi: {
+            incidents: 0,
+            repairs: 0,
+            repairMinutes: 0,
+            slaMet: 0,
+            slaMissed: 0,
+            customerMinutes: 0,
+            customerMinutesToday: 0,
+            customerMinutesYesterday: 0,
+          },
+        },
+        incidents: [],
+        workOrders: [],
+        crews: [],
       },
     };
   },

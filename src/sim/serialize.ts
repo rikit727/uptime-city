@@ -7,14 +7,26 @@
 import { rebuildCache } from './cache';
 import { buildingDef } from './data';
 import { Rng } from './rng';
-import { emptyCache, initialWaterState } from './state';
-import type { Building, Estate, GameRules, SimState, WaterState, WeatherState } from './state';
-import type { ZoneId } from './types';
-import type { WorldState } from './world';
+import { emptyCache, emptyKpis, initialAssetsState, initialWaterState } from './state';
+import type {
+  AssetsState,
+  Building,
+  Crew,
+  Estate,
+  GameRules,
+  Incident,
+  SimState,
+  WaterState,
+  WeatherState,
+  WorkOrder,
+} from './state';
+import { TILE_ASSET_LAYERS } from './types';
+import type { TileAssetLayer, ZoneId } from './types';
+import type { PerAssetLayer, WorldState } from './world';
 
 /**
- * A building as saved:
- * [id, code, x, y, occupancy, unpoweredMinutes, storedMWh, storedMl, dryMinutes].
+ * A building as saved: [id, code, x, y, occupancy, unpoweredMinutes, storedMWh,
+ * storedMl, dryMinutes, condition, builtDay, peakLoad].
  */
 export type SerializedBuilding = [
   number,
@@ -26,7 +38,13 @@ export type SerializedBuilding = [
   number,
   number,
   number,
+  number,
+  number,
+  number,
 ];
+
+/** Per-layer RLE arrays (road, main, line). */
+export type SerializedAssetLayers = Record<TileAssetLayer, number[]>;
 
 export interface SerializedWorld {
   width: number;
@@ -38,6 +56,9 @@ export interface SerializedWorld {
   power: number[];
   water: number[];
   pressure: number[];
+  condition: SerializedAssetLayers;
+  laid: SerializedAssetLayers;
+  peakLoad: SerializedAssetLayers;
 }
 
 export interface SerializedState {
@@ -56,9 +77,13 @@ export interface SerializedState {
   demand: Record<ZoneId, number>;
   growthCursor: number;
   water: WaterState;
+  assets: AssetsState;
+  incidents: Incident[];
+  workOrders: WorkOrder[];
+  crews: Crew[];
 }
 
-export function rleEncode(data: Uint8Array): number[] {
+export function rleEncode(data: ArrayLike<number>): number[] {
   const out: number[] = [];
   let i = 0;
   while (i < data.length) {
@@ -72,13 +97,27 @@ export function rleEncode(data: Uint8Array): number[] {
 }
 
 export function rleDecode(rle: readonly number[], length: number): Uint8Array {
-  if (rle.length % 2 !== 0) throw new Error('Corrupt tile data (odd RLE length).');
-  const out = new Uint8Array(length);
+  return rleDecodeInto(rle, new Uint8Array(length), 255);
+}
+
+export function rleDecode16(rle: readonly number[], length: number): Uint16Array {
+  return rleDecodeInto(rle, new Uint16Array(length), 65535);
+}
+
+function rleDecodeInto<T extends Uint8Array | Uint16Array>(
+  rle: readonly number[],
+  out: T,
+  max: number,
+): T {
+  if (!Array.isArray(rle) || rle.length % 2 !== 0) {
+    throw new Error('Corrupt tile data (odd RLE length).');
+  }
+  const length = out.length;
   let pos = 0;
   for (let k = 0; k < rle.length; k += 2) {
     const v = rle[k]!;
     const run = rle[k + 1]!;
-    if (!Number.isInteger(v) || v < 0 || v > 255 || !Number.isInteger(run) || run < 1) {
+    if (!Number.isInteger(v) || v < 0 || v > max || !Number.isInteger(run) || run < 1) {
       throw new Error('Corrupt tile data (bad RLE pair).');
     }
     if (pos + run > length) throw new Error('Corrupt tile data (too long).');
@@ -108,6 +147,9 @@ export function serializeState(state: SimState): SerializedState {
       power: rleEncode(w.power),
       water: rleEncode(w.water),
       pressure: rleEncode(w.pressure),
+      condition: encodeLayers(w.condition),
+      laid: encodeLayers(w.laid),
+      peakLoad: encodeLayers(w.peakLoad),
     },
     buildings: state.buildings.map((b) => [
       b.id,
@@ -119,6 +161,9 @@ export function serializeState(state: SimState): SerializedState {
       b.storedMWh,
       b.storedMl,
       b.dryMinutes,
+      b.condition,
+      b.builtDay,
+      b.peakLoad,
     ]),
     nextBuildingId: state.nextBuildingId,
     estates: state.estates.map((e) => ({ ...e })),
@@ -127,7 +172,31 @@ export function serializeState(state: SimState): SerializedState {
     demand: { ...state.demand },
     growthCursor: state.growthCursor,
     water: { ...state.water },
+    assets: { ...state.assets, kpi: { ...state.assets.kpi } },
+    incidents: state.incidents.map((i) => ({ ...i, asset: i.asset ? { ...i.asset } : null })),
+    workOrders: state.workOrders.map((o) => ({ ...o, asset: { ...o.asset } })),
+    crews: state.crews.map((c) => ({ ...c, path: [...c.path] })),
   };
+}
+
+function encodeLayers(layers: PerAssetLayer<ArrayLike<number>>): SerializedAssetLayers {
+  return {
+    road: rleEncode(layers.road),
+    main: rleEncode(layers.main),
+    line: rleEncode(layers.line),
+  };
+}
+
+function decodeLayers<T>(
+  raw: unknown,
+  what: string,
+  decode: (rle: readonly number[]) => T,
+): PerAssetLayer<T> {
+  if (typeof raw !== 'object' || raw === null) throw new Error(`Save is missing ${what}.`);
+  const r = raw as Record<string, unknown>;
+  const out = {} as PerAssetLayer<T>;
+  for (const layer of TILE_ASSET_LAYERS) out[layer] = decode(arr(r[layer], `${what} (${layer})`));
+  return out;
 }
 
 function num(v: unknown, what: string): number {
@@ -159,6 +228,9 @@ export function deserializeState(data: SerializedState): SimState {
     power: rleDecode(arr(wd.power, 'power lines'), n),
     water: rleDecode(arr(wd.water, 'water mains'), n),
     pressure: rleDecode(arr(wd.pressure, 'water pressures'), n),
+    condition: decodeLayers(wd.condition, 'asset condition', (r) => rleDecode16(r, n)),
+    laid: decodeLayers(wd.laid, 'asset ages', (r) => rleDecode16(r, n)),
+    peakLoad: decodeLayers(wd.peakLoad, 'asset loads', (r) => rleDecode(r, n)),
   };
   const buildings = arr(data.buildings, 'buildings').map((raw) => parseBuilding(raw, world));
   for (let k = 1; k < buildings.length; k++) {
@@ -196,6 +268,10 @@ export function deserializeState(data: SerializedState): SimState {
     demand: { ...demand },
     growthCursor: num(data.growthCursor, 'growth cursor') % n,
     water: parseWater(data.water),
+    assets: parseAssets(data.assets),
+    incidents: parseList(data.incidents, 'incidents', parseIncident),
+    workOrders: parseList(data.workOrders, 'work orders', parseOrder),
+    crews: parseList(data.crews, 'crews', parseCrew),
     cache: emptyCache(world),
   };
   rebuildCache(state);
@@ -214,16 +290,148 @@ function parseWater(raw: unknown): WaterState {
   return out;
 }
 
+function parseAssets(raw: unknown): AssetsState {
+  if (typeof raw !== 'object' || raw === null) throw new Error('Save is missing the asset state.');
+  const r = raw as Record<string, unknown>;
+  const out = initialAssetsState();
+  out.cursor = num(r.cursor, 'asset cursor');
+  out.nextIncidentId = num(r.nextIncidentId, 'incident counter');
+  out.nextOrderId = num(r.nextOrderId, 'work order counter');
+  out.nextCrewId = num(r.nextCrewId, 'crew counter');
+  const kpi = (r.kpi ?? {}) as Record<string, unknown>;
+  const k = emptyKpis();
+  for (const key of Object.keys(k) as (keyof typeof k)[]) k[key] = num(kpi[key], `KPI ${key}`);
+  out.kpi = k;
+  return out;
+}
+
+/** Parse a saved list of records, checking ids ascend. */
+function parseList<T extends { id: number }>(
+  raw: unknown,
+  what: string,
+  parse: (r: Record<string, unknown>) => T,
+): T[] {
+  const list = arr(raw, what) as unknown[];
+  const out = list.map((item) => {
+    if (typeof item !== 'object' || item === null) throw new Error(`Save has corrupt ${what}.`);
+    return parse(item as Record<string, unknown>);
+  });
+  for (let k = 1; k < out.length; k++) {
+    if (out[k]!.id <= out[k - 1]!.id) throw new Error(`Save has corrupt ${what}.`);
+  }
+  return out;
+}
+
+const ASSET_LAYERS = new Set(['road', 'main', 'line', 'facility']);
+
+function parseRef(raw: unknown): { layer: 'road' | 'main' | 'line' | 'facility'; id: number } {
+  const r = raw as Record<string, unknown> | null;
+  if (!r || typeof r.layer !== 'string' || !ASSET_LAYERS.has(r.layer)) {
+    throw new Error('Save has a corrupt asset reference.');
+  }
+  return { layer: r.layer as 'road', id: num(r.id, 'asset id') };
+}
+
+function oneOf<T extends string>(v: unknown, options: readonly T[], what: string): T {
+  if (typeof v !== 'string' || !options.includes(v as T))
+    throw new Error(`Save has a corrupt ${what}.`);
+  return v as T;
+}
+
+function parseIncident(r: Record<string, unknown>): Incident {
+  return {
+    id: num(r.id, 'incident id'),
+    kind: oneOf(
+      r.kind,
+      ['burst', 'cableFault', 'roadDefect', 'facilityFault', 'overflow'],
+      'incident',
+    ),
+    title: typeof r.title === 'string' ? r.title : 'Incident',
+    asset: r.asset === null ? null : parseRef(r.asset),
+    tile: num(r.tile, 'incident tile'),
+    openedMinute: num(r.openedMinute, 'incident time'),
+    slaMinutes: num(r.slaMinutes, 'incident SLA'),
+    resolvedMinute: num(r.resolvedMinute, 'incident time'),
+    outcome: oneOf(r.outcome, ['', 'repaired', 'removed', 'cleared'], 'incident'),
+    severity: num(r.severity, 'incident severity'),
+    customers: num(r.customers, 'incident customers'),
+    peakCustomers: num(r.peakCustomers, 'incident customers'),
+    priorityCustomers: num(r.priorityCustomers, 'incident customers'),
+    customerMinutes: num(r.customerMinutes, 'incident customer-minutes'),
+    bottledWater: r.bottledWater === true,
+    slaBreached: r.slaBreached === true,
+    orderId: num(r.orderId, 'incident work order'),
+  };
+}
+
+function parseOrder(r: Record<string, unknown>): WorkOrder {
+  return {
+    id: num(r.id, 'work order id'),
+    type: oneOf(r.type, ['repair', 'maintenance'], 'work order'),
+    crew: oneOf(r.crew, ['roads', 'water', 'power'], 'work order'),
+    asset: parseRef(r.asset),
+    tile: num(r.tile, 'work order tile'),
+    incidentId: num(r.incidentId, 'work order incident'),
+    priority: num(r.priority, 'work order priority'),
+    manualPriority: r.manualPriority === true,
+    status: oneOf(r.status, ['queued', 'enRoute', 'onSite'], 'work order'),
+    createdMinute: num(r.createdMinute, 'work order time'),
+    workMinutes: num(r.workMinutes, 'work order duration'),
+    cost: num(r.cost, 'work order cost'),
+    prepaid: r.prepaid === true,
+    crewId: num(r.crewId, 'work order crew'),
+    startedMinute: num(r.startedMinute, 'work order time'),
+  };
+}
+
+function parseCrew(r: Record<string, unknown>): Crew {
+  return {
+    id: num(r.id, 'crew id'),
+    type: oneOf(r.type, ['roads', 'water', 'power'], 'crew'),
+    depot: num(r.depot, 'crew depot'),
+    status: oneOf(r.status, ['idle', 'enRoute', 'onSite', 'returning'], 'crew'),
+    orderId: num(r.orderId, 'crew work order'),
+    path: arr(r.path, 'crew route').map((v) => num(v, 'crew route')),
+    departMinute: num(r.departMinute, 'crew time'),
+    arriveMinute: num(r.arriveMinute, 'crew time'),
+    tile: num(r.tile, 'crew tile'),
+  };
+}
+
 function parseBuilding(raw: unknown, world: WorldState): Building {
-  if (!Array.isArray(raw) || raw.length !== 9) throw new Error('Save has a corrupt building.');
-  const [id, code, x, y, occupancy, unpoweredMinutes, storedMWh, storedMl, dryMinutes] = raw.map(
-    (v) => num(v, 'building data'),
-  ) as SerializedBuilding;
+  if (!Array.isArray(raw) || raw.length !== 12) throw new Error('Save has a corrupt building.');
+  const [
+    id,
+    code,
+    x,
+    y,
+    occupancy,
+    unpoweredMinutes,
+    storedMWh,
+    storedMl,
+    dryMinutes,
+    condition,
+    builtDay,
+    peakLoad,
+  ] = raw.map((v) => num(v, 'building data')) as SerializedBuilding;
   const def = buildingDef(code);
   if (!def) throw new Error(`Save has an unknown building type (${code}).`);
   const [fw, fd] = def.footprint;
   if (x < 0 || y < 0 || x + fw > world.width || y + fd > world.height) {
     throw new Error('Save has a building outside the map.');
   }
-  return { id, code, x, y, occupancy, unpoweredMinutes, storedMWh, storedMl, dryMinutes };
+  return {
+    id,
+    code,
+    x,
+    y,
+    occupancy,
+    unpoweredMinutes,
+    storedMWh,
+    storedMl,
+    dryMinutes,
+    condition,
+    builtDay,
+    peakLoad,
+  };
 }

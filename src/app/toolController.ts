@@ -2,7 +2,7 @@
  * Turns pointer input on the map into tool previews and sim commands.
  * The current tool and density live here; the HUD only displays them.
  */
-import { facilityDef } from '../sim';
+import { ASSETS, facilityDef } from '../sim';
 import type { Command, DensityId, Simulation } from '../sim';
 import type { GameRenderer } from '../render/renderer';
 import type { Hud } from '../ui/hud';
@@ -13,6 +13,8 @@ import type { CameraInput } from './cameraInput';
 export class ToolController {
   tool: ToolId = { kind: 'inspect' };
   density: DensityId = 'low';
+  /** Maintenance tool: raise work for assets below this condition. */
+  threshold = ASSETS.maintenanceThresholds[1] ?? 70;
   private dragStart: number | null = null;
   private dragEnd: number | null = null;
   private pointerId: number | null = null;
@@ -43,18 +45,31 @@ export class ToolController {
     this.cancel();
     this.tool = tool;
     this.hover = null;
-    this.hud.setActiveTool(tool, this.density);
+    this.hud.setActiveTool(tool, this.density, this.threshold);
     if (tool.kind !== 'inspect') this.hud.inspector.show(null);
     this.hud.setStatus(hintFor(tool));
   }
 
   setDensity(d: DensityId): void {
     this.density = d;
-    this.hud.setActiveTool(this.tool, d);
+    this.hud.setActiveTool(this.tool, d, this.threshold);
     this.refreshPreview();
   }
 
+  setThreshold(below: number): void {
+    this.threshold = below;
+    this.hud.setActiveTool(this.tool, this.density, below);
+    this.refreshPreview();
+  }
+
+  /** [ / ]: zone density, or the maintenance threshold while that tool is active. */
   cycleDensity(step: number): void {
+    if (this.tool.kind === 'maintain') {
+      const list = ASSETS.maintenanceThresholds;
+      const i = Math.max(0, Math.min(list.length - 1, list.indexOf(this.threshold) + step));
+      this.setThreshold(list[i]!);
+      return;
+    }
     const order: DensityId[] = ['low', 'medium', 'high'];
     const i = Math.max(0, Math.min(2, order.indexOf(this.density) + step));
     this.setDensity(order[i]!);
@@ -157,6 +172,8 @@ export class ToolController {
         return { type: 'buildMain', main: this.tool.main, from, to };
       case 'bulldoze':
         return { type: 'bulldoze', from, to };
+      case 'maintain':
+        return { type: 'raiseMaintenance', from, to, below: this.threshold };
       default:
         return null;
     }
@@ -170,7 +187,7 @@ export class ToolController {
       affected: plan.affected,
       blocked: plan.blocked,
       removed: plan.removed,
-      removing: cmd.type === 'bulldoze',
+      removing: cmd.type === 'bulldoze' || cmd.type === 'raiseMaintenance',
       invalid: !plan.ok && plan.affected.length > 0,
     });
     if (plan.ok) {
@@ -179,7 +196,9 @@ export class ToolController {
       const parts =
         cmd.type === 'placeFacility'
           ? [facilityDef(cmd.facility).name, formatMoney(plan.cost)]
-          : [`${n} tile${n === 1 ? '' : 's'}`, formatMoney(plan.cost)];
+          : cmd.type === 'raiseMaintenance'
+            ? [`Maintenance on ${n} site${n === 1 ? '' : 's'}`, formatMoney(plan.cost)]
+            : [`${n} tile${n === 1 ? '' : 's'}`, formatMoney(plan.cost)];
       if (d > 0) parts.push(`demolishes ${d} building${d === 1 ? '' : 's'}`);
       this.hud.setStatus(parts.join(' · '));
     } else {
@@ -204,6 +223,8 @@ function hintFor(tool: ToolId): string {
       const def = facilityDef(tool.facility);
       const name = def.name.toLowerCase();
       if (def.utility === 'power') return `Click to place a ${name}. Connect it with power lines.`;
+      if (def.utility === 'depot')
+        return `Click beside a road to place a ${name}. Its crews drive out to repairs and maintenance.`;
       if (def.kind === 'intake') return 'Click on the riverbank to place a river intake.';
       if (def.kind === 'sewage')
         return 'Click beside a road to place a sewage treatment works. Sewers run under every road.';
@@ -211,5 +232,7 @@ function hintFor(tool: ToolId): string {
     }
     case 'bulldoze':
       return 'Drag a rectangle to clear roads, lines, buildings and zoning.';
+    case 'maintain':
+      return 'Drag a rectangle to book maintenance for every asset below the condition threshold ([ / ] to change it).';
   }
 }

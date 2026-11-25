@@ -3,12 +3,13 @@
  * inspector, toasts and modals. It changes the game only through `UiActions`.
  */
 import { GAME_NAME } from '../config';
-import { GAME, ZONES, cityTotals, weatherEvent } from '../sim';
-import type { DensityId, SimSnapshot } from '../sim';
+import { ASSETS, GAME, ZONES, cityTotals, isOpen, mttrMinutes, weatherEvent } from '../sim';
+import type { Command, DensityId, SimSnapshot } from '../sim';
 import type { SlotId, SlotSummary } from '../platform/saves';
 import { clear, h } from './dom';
 import { formatGameTime, formatInt, formatMW, formatMoney, formatRealDate } from './format';
 import { LPS_PER_MLD, WATER } from '../sim';
+import { Inbox, formatDuration } from './inbox';
 import { Inspector } from './inspector';
 import { Modal } from './modal';
 import { CONTROL_ROWS } from './shortcuts';
@@ -30,6 +31,11 @@ export interface UiActions {
   setGrid(visible: boolean): void;
   toggleWaterOverlay(): void;
   helpClosed(): void;
+  /** Send a command to the sim; failures are shown as a toast. */
+  dispatch(cmd: Command): void;
+  /** Move the camera to a tile and inspect it. */
+  focusTile(tile: number): void;
+  setThreshold(below: number): void;
 }
 
 const SLOT_LABELS: Record<SlotId, string> = {
@@ -42,8 +48,12 @@ const SLOT_LABELS: Record<SlotId, string> = {
 export class Hud {
   readonly root: HTMLDivElement;
   readonly toasts = new Toasts();
-  readonly inspector = new Inspector();
+  readonly inspector: Inspector;
+  readonly inbox: Inbox;
   private readonly modal: Modal;
+  private readonly incidentsEl = h('button', { class: 'chip incidents', title: 'Incidents' });
+  private readonly thresholdBar = h('div', { class: 'density-bar threshold-bar hidden' });
+  private readonly thresholdButtons = new Map<number, HTMLButtonElement>();
   private readonly timeEl = h('span', { class: 'time' });
   private readonly cashEl = h('span', { class: 'cash' });
   private readonly weatherEl = h('span', { class: 'chip weather' });
@@ -62,6 +72,8 @@ export class Hud {
   private lastSpeed = -1;
 
   constructor(private readonly actions: UiActions) {
+    this.inspector = new Inspector(actions);
+    this.inbox = new Inbox(actions);
     this.modal = new Modal(() => this.closeModal());
     const topBar = this.buildTopBar();
     this.root = h(
@@ -72,6 +84,7 @@ export class Hud {
       this.statusEl,
       this.legendEl,
       this.inspector.el,
+      this.inbox.el,
       this.toasts.el,
       this.modal.el,
     );
@@ -86,6 +99,7 @@ export class Hud {
 
   private buildTopBar(): HTMLElement {
     this.waterEl.addEventListener('click', () => this.actions.toggleWaterOverlay());
+    this.incidentsEl.addEventListener('click', () => this.inbox.toggle());
     const speeds = h('div', { class: 'speeds', role: 'group', 'aria-label': 'Game speed' });
     GAME.speeds.forEach((s, i) => {
       const b = h(
@@ -115,6 +129,7 @@ export class Hud {
       this.weatherEl,
       this.powerEl,
       this.waterEl,
+      this.incidentsEl,
       this.popEl,
       speeds,
       menu,
@@ -156,10 +171,23 @@ export class Hud {
       this.densityBar.append(b);
     }
     bar.append(this.densityBar);
+    for (const t of ASSETS.maintenanceThresholds) {
+      const b = h('button', { title: `Assets below ${t}% condition ([ / ])` }, `< ${t}%`);
+      b.addEventListener('click', () => this.actions.setThreshold(t));
+      this.thresholdButtons.set(t, b);
+      this.thresholdBar.append(b);
+    }
+    const all = h('button', { title: 'Every asset in the area' }, 'All');
+    all.addEventListener('click', () => this.actions.setThreshold(101));
+    this.thresholdButtons.set(101, all);
+    this.thresholdBar.append(all);
+    bar.append(this.thresholdBar);
     return bar;
   }
 
-  setActiveTool(tool: ToolId, density: DensityId): void {
+  setActiveTool(tool: ToolId, density: DensityId, threshold = 70): void {
+    this.thresholdBar.classList.toggle('hidden', tool.kind !== 'maintain');
+    for (const [t, b] of this.thresholdButtons) b.classList.toggle('active', t === threshold);
     const key = toolKey(tool);
     for (const [k, b] of this.toolButtons) b.classList.toggle('active', k === key);
     const zone = tool.kind === 'zone' ? ZONES.types.find((z) => z.id === tool.zone) : undefined;
@@ -195,6 +223,7 @@ export class Hud {
       this.speedButtons.forEach((b, i) => b.classList.toggle('active', i === speedIndex));
     }
     this.inspector.update(snap);
+    this.inbox.update(snap);
   }
 
   private updateChips(snap: SimSnapshot): void {
@@ -240,6 +269,7 @@ export class Hud {
       .join('\n');
 
     this.updateWaterChip(snap);
+    this.updateIncidentChip(snap);
 
     const t = cityTotals(snap);
     this.popEl.textContent = `Pop ${formatInt(t.residents)} · Jobs ${formatInt(t.jobs)}`;
@@ -283,6 +313,26 @@ export class Hud {
       .join('\n');
   }
 
+  private updateIncidentChip(snap: SimSnapshot): void {
+    const open = snap.incidents.filter(isOpen);
+    const worst = open.reduce((m, i) => Math.max(m, i.severity), 0);
+    const k = snap.assets.kpi;
+    const queued = snap.workOrders.filter((o) => o.status === 'queued').length;
+    this.incidentsEl.textContent =
+      open.length === 0
+        ? '🛠 No incidents'
+        : `🛠 ${open.length} incident${open.length === 1 ? '' : 's'}`;
+    this.incidentsEl.classList.toggle('alert', worst >= 3);
+    this.incidentsEl.classList.toggle('warn', worst > 0 && worst < 3);
+    this.incidentsEl.title = [
+      open.length > 0 ? `${open.length} open incidents` : 'No open incidents',
+      `${snap.workOrders.length} work orders (${queued} waiting for a crew)`,
+      `Mean time to repair ${k.repairs > 0 ? formatDuration(mttrMinutes(snap)) : 'not yet known'}`,
+      `Customer-minutes lost today ${formatInt(k.customerMinutesToday)} (yesterday ${formatInt(k.customerMinutesYesterday)})`,
+      'Click to open the incident inbox (`)',
+    ].join('\n');
+  }
+
   setWaterOverlay(on: boolean): void {
     this.waterEl.classList.toggle('active', on);
     this.legendEl.classList.toggle('hidden', !on);
@@ -308,7 +358,7 @@ export class Hud {
       h(
         'p',
         {},
-        'You run the city day to day. Lay out roads, zone land, keep the lights on and the taps running: buildings only grow where there is power and water. Traffic, incidents and budgets arrive in later milestones.',
+        'You run the city day to day. Lay out roads, zone land, keep the lights on and the taps running: buildings only grow where there is power and water. Traffic and budgets arrive in later milestones.',
       ),
       h(
         'ol',
@@ -337,6 +387,11 @@ export class Hud {
           'li',
           {},
           'Wastewater drains along roads to a sewage works. Heavy storms can overflow it. Farms near the river irrigate from it, up to a daily licence; heatwaves push demand up.',
+        ),
+        h(
+          'li',
+          {},
+          'Everything wears out: roads, mains, lines and plant lose condition every day (faster when busy) and fail more often as they age. Build a highways, water and electricity depot (Shift+1/2/3) beside a road: their crews drive out to repairs automatically. A burst main cuts off everyone downstream until a crew isolates and repairs it; a cable fault cuts the line. Open the incident inbox (` or the 🛠 chip) to re-prioritise work, send a particular crew or send bottled water to priority customers. Book planned maintenance with the Plan maintenance tool (;) or from the inspector, but note the asset is out of service while the crew works.',
         ),
         h(
           'li',
@@ -472,6 +527,7 @@ function groupLabel(group: string): string {
       zones: 'Zones',
       power: 'Power',
       water: 'Water',
+      maintain: 'Maintenance',
       demolish: 'Demolish',
     }[group] ?? group
   );

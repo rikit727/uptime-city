@@ -3,6 +3,8 @@ import { ROADS, mainType, roadClass } from '../data';
 import { rebuildEstates } from '../estates';
 import { roadPath } from '../geometry';
 import type { SimState } from '../state';
+import { layTileAsset } from '../assets';
+import { retireAsset } from '../incidents';
 import { rebuildWater } from '../water';
 import { isWater } from '../world';
 import {
@@ -69,8 +71,13 @@ export function applyBuildRoad(state: SimState, cmd: BuildRoadCommand, plan: Com
   removeBuildings(state, plan.demolish);
   let rezoned = false;
   for (const i of plan.affected) {
+    if (w.road[i] !== 0) retireAsset(state, { layer: 'road', id: i });
     w.road[i] = code;
-    if (w.water[i] === 0) w.water[i] = main;
+    layTileAsset(state, 'road', i);
+    if (w.water[i] === 0) {
+      w.water[i] = main;
+      layTileAsset(state, 'main', i);
+    }
     if (w.zone[i] !== 0) rezoned = true;
     w.zone[i] = 0;
     w.density[i] = 0;
