@@ -7,6 +7,7 @@ import gameJson from '../data/game.json';
 import growthJson from '../data/growth.json';
 import powerJson from '../data/power.json';
 import roadsJson from '../data/roads.json';
+import waterJson from '../data/water.json';
 import weatherJson from '../data/weather.json';
 import zonesJson from '../data/zones.json';
 import { SEASON_ORDER } from './types';
@@ -16,8 +17,12 @@ import type {
   FacilityKind,
   FieldStyle,
   LineTypeId,
+  MainTypeId,
+  PowerFacilityId,
   RoadClassId,
   SeasonId,
+  WaterFacilityId,
+  WaterFacilityKind,
   WeatherEventId,
   ZoneId,
 } from './types';
@@ -147,7 +152,14 @@ export interface GrownBuildingDef extends BuildingDefBase {
   residents: number;
   /** Peak electrical load at full occupancy, kW. */
   powerKw: number;
-  /** Load-shedding priority: 0 is shed last (see power.json `priorityNames`). */
+  /** Average water use at full occupancy, litres per day (water.json scales it by hour). */
+  waterLpd: number;
+  /** Farms: irrigation (or livestock watering) at reference conditions, litres per day. */
+  irrigationLpd?: number;
+  /**
+   * Load-shedding priority: 0 is shed last (see power.json `priorityNames`). Priority 0
+   * buildings are also priority water customers (hospitals, care homes).
+   */
   priority: number;
   heightJitter: number;
   /** Farms: export income per day at full occupancy (used by the economy in M6). */
@@ -158,7 +170,8 @@ export interface GrownBuildingDef extends BuildingDefBase {
 /** A player-placed power facility (power.json). */
 export interface FacilityDef extends BuildingDefBase {
   role: 'facility';
-  id: FacilityId;
+  utility: 'power';
+  id: PowerFacilityId;
   kind: FacilityKind;
   capacityMW: number;
   cost: number;
@@ -169,7 +182,31 @@ export interface FacilityDef extends BuildingDefBase {
   wind?: { cutInMs: number; ratedMs: number; cutOutMs: number };
 }
 
-export type BuildingDef = GrownBuildingDef | FacilityDef;
+/** A player-placed water or wastewater facility (water.json). */
+export interface WaterFacilityDef extends BuildingDefBase {
+  role: 'facility';
+  utility: 'water';
+  id: WaterFacilityId;
+  kind: WaterFacilityKind;
+  cost: number;
+  /** Electrical load while running, kW (pumps, treatment). */
+  powerKw: number;
+  /** Load-shedding priority (power.json `priorityNames`). */
+  priority: number;
+  /** Intake, treatment and sewage works: throughput, Ml per day. */
+  capacityMlPerDay?: number;
+  /** Intakes: the abstraction licence each one brings, Ml per day. */
+  licenceMlPerDay?: number;
+  /** Reservoirs and towers: storage, Ml. */
+  storageMl?: number;
+  /** Treatment works outlet and storage: pressure head supplied, m. */
+  headM?: number;
+  /** Boosters: head added downstream, m. */
+  boostM?: number;
+}
+
+export type AnyFacilityDef = FacilityDef | WaterFacilityDef;
+export type BuildingDef = GrownBuildingDef | AnyFacilityDef;
 
 export interface LineTypeDef {
   id: LineTypeId;
@@ -208,11 +245,83 @@ export const BUILDINGS = {
 };
 
 const rawPower = powerJson as unknown as Omit<PowerConfig, 'facilities'> & {
-  facilities: Omit<FacilityDef, 'role'>[];
+  facilities: Omit<FacilityDef, 'role' | 'utility'>[];
 };
 export const POWER: PowerConfig = {
   ...rawPower,
-  facilities: rawPower.facilities.map((f): FacilityDef => ({ ...f, role: 'facility' })),
+  facilities: rawPower.facilities.map((f): FacilityDef => ({
+    ...f,
+    role: 'facility',
+    utility: 'power',
+  })),
+};
+
+// ---- water --------------------------------------------------------------------
+
+export interface MainTypeDef {
+  id: MainTypeId;
+  code: number;
+  name: string;
+  diameterMm: number;
+  /** Flow at which the main is fully loaded, l/s. */
+  capacityLps: number;
+  /** Head loss per km with almost no flow (m/km). */
+  baseLossPerKm: number;
+  /** Extra head loss per km at capacity (m/km); scales with (flow / capacity)². */
+  lossPerKmAtCapacity: number;
+  costPerTile: number;
+  colour: string;
+}
+
+export interface WaterConfig {
+  solveIntervalMinutes: number;
+  solveOffset: number;
+  pressure: { goodM: number; lowM: number; noSupplyM: number; maxM: number };
+  /** Pressure overlay colour ramp (colour-blind safe), from 0 m to `rampMaxM`. */
+  overlay: { rampMaxM: number; ramp: string[] };
+  /** Source heads are scaled by (1 - unmet share) ^ this when a network cannot meet demand. */
+  deficitHeadExponent: number;
+  /** Tiles around a footprint searched for a main (and a road for the sewer). */
+  connectionRange: number;
+  /** Minutes without water before occupancy starts to fall. */
+  outageGraceMinutes: number;
+  vacantUseFraction: number;
+  temperature: { refC: number; perDegreeAbove: number };
+  /** Hourly factors per zone, normalised to an average of 1. */
+  demandCurves: Record<ZoneId, number[]>;
+  irrigation: {
+    seasonFactor: Record<SeasonId, number>;
+    refC: number;
+    perDegreeAbove: number;
+    heatwaveFactor: number;
+    rainStopsMmPerHour: number;
+    riverRangeTiles: number;
+    farmLicenceMlPerDay: number;
+  };
+  wastewater: { returnFraction: number; runoffCoefficient: number };
+  mains: MainTypeDef[];
+  mainWaterCostMultiplier: number;
+  mainDemolishCostPerTile: number;
+  facilities: WaterFacilityDef[];
+}
+
+const rawWater = waterJson as unknown as Omit<WaterConfig, 'facilities'> & {
+  facilities: Omit<WaterFacilityDef, 'role' | 'utility'>[];
+};
+const normalise = (curve: number[]): number[] => {
+  const mean = curve.reduce((s, v) => s + v, 0) / curve.length;
+  return curve.map((v) => v / mean);
+};
+export const WATER: WaterConfig = {
+  ...rawWater,
+  demandCurves: Object.fromEntries(
+    Object.entries(rawWater.demandCurves).map(([z, c]) => [z, normalise(c)]),
+  ) as Record<ZoneId, number[]>,
+  facilities: rawWater.facilities.map((f): WaterFacilityDef => ({
+    ...f,
+    role: 'facility',
+    utility: 'water',
+  })),
 };
 
 export interface GrowthConfig {
@@ -267,10 +376,13 @@ const zoneById = indexBy(ZONES.types, (z) => z.id);
 const zoneByCode = indexBy(ZONES.types, (z) => z.code);
 const densityById = indexBy(ZONES.densities, (d) => d.id);
 const densityByCode = indexBy(ZONES.densities, (d) => d.code);
-const allBuildings: BuildingDef[] = [...BUILDINGS.types, ...POWER.facilities];
+const allFacilities: AnyFacilityDef[] = [...POWER.facilities, ...WATER.facilities];
+const allBuildings: BuildingDef[] = [...BUILDINGS.types, ...allFacilities];
 const buildingByCode = indexBy(allBuildings, (b) => b.code);
 indexBy(allBuildings, (b) => b.id);
-const facilityById = indexBy(POWER.facilities, (f) => f.id);
+const facilityById = indexBy<AnyFacilityDef, string>(allFacilities, (f) => f.id);
+const mainById = indexBy(WATER.mains, (m) => m.id);
+const mainByCode = indexBy(WATER.mains, (m) => m.code);
 const lineById = indexBy(POWER.lines, (l) => l.id);
 const lineByCode = indexBy(POWER.lines, (l) => l.code);
 const seasonById = indexBy(WEATHER.seasons, (s) => s.id);
@@ -278,8 +390,10 @@ const weatherEventById = indexBy(WEATHER.events, (e) => e.id);
 if (WEATHER.seasons.map((s) => s.id).join() !== SEASON_ORDER.join()) {
   throw new Error('weather.json seasons must be listed in calendar order.');
 }
-for (const [zone, curve] of Object.entries(POWER.demandCurves)) {
-  if (curve.length !== 24) throw new Error(`Demand curve ${zone} needs 24 hourly values.`);
+for (const curves of [POWER.demandCurves, WATER.demandCurves]) {
+  for (const [zone, curve] of Object.entries(curves)) {
+    if (curve.length !== 24) throw new Error(`Demand curve ${zone} needs 24 hourly values.`);
+  }
 }
 
 function must<T>(value: T | undefined, what: string): T {
@@ -295,8 +409,15 @@ export const density = (id: DensityId): DensityDef => must(densityById.get(id), 
 export const densityByCodeOf = (code: number): DensityDef | undefined => densityByCode.get(code);
 
 export const buildingDef = (code: number): BuildingDef | undefined => buildingByCode.get(code);
-export const facilityDef = (id: FacilityId): FacilityDef =>
-  must(facilityById.get(id), `facility ${id}`);
+/** Any facility (power or water) by id. */
+export function facilityDef(id: PowerFacilityId): FacilityDef;
+export function facilityDef(id: WaterFacilityId): WaterFacilityDef;
+export function facilityDef(id: FacilityId): AnyFacilityDef;
+export function facilityDef(id: FacilityId): AnyFacilityDef {
+  return must(facilityById.get(id), `facility ${id}`);
+}
+export const mainType = (id: MainTypeId): MainTypeDef => must(mainById.get(id), `main ${id}`);
+export const mainTypeByCode = (code: number): MainTypeDef | undefined => mainByCode.get(code);
 export const lineType = (id: LineTypeId): LineTypeDef => must(lineById.get(id), `line ${id}`);
 export const lineTypeByCode = (code: number): LineTypeDef | undefined => lineByCode.get(code);
 export const season = (id: SeasonId): SeasonDef => must(seasonById.get(id), `season ${id}`);

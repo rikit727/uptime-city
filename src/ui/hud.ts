@@ -8,6 +8,7 @@ import type { DensityId, SimSnapshot } from '../sim';
 import type { SlotId, SlotSummary } from '../platform/saves';
 import { clear, h } from './dom';
 import { formatGameTime, formatInt, formatMW, formatMoney, formatRealDate } from './format';
+import { LPS_PER_MLD, WATER } from '../sim';
 import { Inspector } from './inspector';
 import { Modal } from './modal';
 import { CONTROL_ROWS } from './shortcuts';
@@ -27,6 +28,7 @@ export interface UiActions {
   importSave(): Promise<void>;
   newGame(seed: number): void;
   setGrid(visible: boolean): void;
+  toggleWaterOverlay(): void;
   helpClosed(): void;
 }
 
@@ -46,6 +48,8 @@ export class Hud {
   private readonly cashEl = h('span', { class: 'cash' });
   private readonly weatherEl = h('span', { class: 'chip weather' });
   private readonly powerEl = h('span', { class: 'chip power' });
+  private readonly waterEl = h('button', { class: 'chip water', title: 'Water' });
+  private readonly legendEl = buildPressureLegend();
   private readonly popEl = h('span', { class: 'chip population' });
   private lastStatsMinute = -1;
   private readonly speedButtons: HTMLButtonElement[] = [];
@@ -59,21 +63,29 @@ export class Hud {
 
   constructor(private readonly actions: UiActions) {
     this.modal = new Modal(() => this.closeModal());
+    const topBar = this.buildTopBar();
     this.root = h(
       'div',
       { class: 'hud' },
-      this.buildTopBar(),
+      topBar,
       this.buildToolbar(),
       this.statusEl,
+      this.legendEl,
       this.inspector.el,
       this.toasts.el,
       this.modal.el,
     );
+    // Panels below the top bar follow its height (it wraps on narrow screens).
+    new ResizeObserver(() => {
+      const bottom = topBar.offsetTop + topBar.offsetHeight;
+      this.root.style.setProperty('--topbar-bottom', `${bottom}px`);
+    }).observe(topBar);
   }
 
   // ---- top bar -----------------------------------------------------------
 
   private buildTopBar(): HTMLElement {
+    this.waterEl.addEventListener('click', () => this.actions.toggleWaterOverlay());
     const speeds = h('div', { class: 'speeds', role: 'group', 'aria-label': 'Game speed' });
     GAME.speeds.forEach((s, i) => {
       const b = h(
@@ -102,6 +114,7 @@ export class Hud {
       this.cashEl,
       this.weatherEl,
       this.powerEl,
+      this.waterEl,
       this.popEl,
       speeds,
       menu,
@@ -226,11 +239,53 @@ export class Hud {
       .filter((x) => x !== '')
       .join('\n');
 
+    this.updateWaterChip(snap);
+
     const t = cityTotals(snap);
     this.popEl.textContent = `Pop ${formatInt(t.residents)} · Jobs ${formatInt(t.jobs)}`;
     const d = snap.demand;
     const pct = (v: number) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%`;
     this.popEl.title = `Demand: residential ${pct(d.residential)}, commercial ${pct(d.commercial)}, office ${pct(d.office)}, industrial ${pct(d.industrial)}, agricultural ${pct(d.agricultural)}`;
+  }
+
+  private updateWaterChip(snap: SimSnapshot): void {
+    const ws = snap.waterStats;
+    const wl = snap.waterLayout;
+    const any = wl.networks.length > 0 || ws.customers > 0;
+    this.waterEl.textContent = !any
+      ? 'No water'
+      : `💧 ${Math.round(ws.suppliedLps)} / ${Math.round(ws.productionLps)} l/s`;
+    const dry = ws.noSupply > 0;
+    this.waterEl.classList.toggle('alert', dry || ws.spillLps > 0);
+    this.waterEl.classList.toggle('warn', !dry && ws.lowPressure > 0);
+    const ml = (lps: number) => (lps / LPS_PER_MLD).toFixed(1);
+    this.waterEl.title = [
+      `Demand ${ws.demandLps.toFixed(1)} l/s, supplied ${ws.suppliedLps.toFixed(1)} l/s`,
+      `Treatment capacity available ${Math.round(ws.productionLps)} l/s (${ml(ws.productionLps)} Ml/day)`,
+      ws.storageMl > 0 ? `Storage ${ws.storedMl.toFixed(1)} / ${ws.storageMl.toFixed(1)} Ml` : '',
+      `Abstraction today ${snap.water.abstractedTodayMl.toFixed(1)} of ${ws.licenceMlPerDay} Ml licensed${snap.water.licenceBreached ? ' (licence breached)' : ''}`,
+      `Farm irrigation from the river ${snap.water.farmAbstractedTodayMl.toFixed(2)} of ${ws.farmLicenceMlPerDay} Ml${snap.water.irrigationCapped ? ' (stopped for today)' : ''}`,
+      dry
+        ? `${formatInt(ws.noSupply)} buildings without water (${formatInt(ws.residentsNoSupply)} residents)`
+        : 'Every customer has water',
+      ws.priorityNoSupply > 0 ? `${ws.priorityNoSupply} priority customers without water` : '',
+      ws.lowPressure > 0 ? `${formatInt(ws.lowPressure)} buildings on low pressure` : '',
+      ws.sewageCapacityLps > 0
+        ? `Sewage ${Math.round(ws.sewageInflowLps)} l/s into works rated ${Math.round(ws.sewageCapacityLps)} l/s`
+        : '',
+      ws.spillLps > 0 ? `Storm overflow spilling ${Math.round(ws.spillLps)} l/s` : '',
+      ws.untreatedLps > 0.05
+        ? `${ws.untreatedLps.toFixed(1)} l/s of sewage untreated (no works)`
+        : '',
+      'Click to toggle the water pressure overlay (O)',
+    ]
+      .filter((x) => x !== '')
+      .join('\n');
+  }
+
+  setWaterOverlay(on: boolean): void {
+    this.waterEl.classList.toggle('active', on);
+    this.legendEl.classList.toggle('hidden', !on);
   }
 
   // ---- modals ------------------------------------------------------------
@@ -253,7 +308,7 @@ export class Hud {
       h(
         'p',
         {},
-        'You run the city day to day. Lay out roads, zone land and keep the lights on: buildings only grow where there is power. Water, traffic, incidents and budgets arrive in later milestones.',
+        'You run the city day to day. Lay out roads, zone land, keep the lights on and the taps running: buildings only grow where there is power and water. Traffic, incidents and budgets arrive in later milestones.',
       ),
       h(
         'ol',
@@ -272,6 +327,16 @@ export class Hud {
           'li',
           {},
           'Build a power station and a substation, and join them with power lines (or place them side by side). Buildings grow within a substation’s reach; demand for each zone is shown on the population counter.',
+        ),
+        h(
+          'li',
+          {},
+          'Water: build a river intake on the riverbank and a treatment works beside it (both need power). Every road carries a 150 mm main and a sewer, so join the works to your roads. Pressure falls with distance and with busy mains: lay feeder or trunk mains, add service reservoirs or water towers, or a booster pump for far-off areas. Press O to see pressures.',
+        ),
+        h(
+          'li',
+          {},
+          'Wastewater drains along roads to a sewage works. Heavy storms can overflow it. Farms near the river irrigate from it, up to a daily licence; heatwaves push demand up.',
         ),
         h(
           'li',
@@ -400,7 +465,47 @@ export class Hud {
 }
 
 function groupLabel(group: string): string {
-  return { select: 'Select', roads: 'Roads', zones: 'Zones', demolish: 'Demolish' }[group] ?? group;
+  return (
+    {
+      select: 'Select',
+      roads: 'Roads',
+      zones: 'Zones',
+      power: 'Power',
+      water: 'Water',
+      demolish: 'Demolish',
+    }[group] ?? group
+  );
+}
+
+/** Legend for the water pressure overlay (hidden until the overlay is on). */
+function buildPressureLegend(): HTMLElement {
+  const { ramp, rampMaxM } = WATER.overlay;
+  const p = WATER.pressure;
+  const bar = h('div', {
+    class: 'legend-bar',
+    style: `background: linear-gradient(to right, ${ramp.join(', ')})`,
+  });
+  const marks = h('div', { class: 'legend-marks' });
+  for (const [m, label] of [
+    [p.noSupplyM, `${p.noSupplyM}`],
+    [p.lowM, `${p.lowM}`],
+    [p.goodM, `${p.goodM}`],
+    [rampMaxM, `${rampMaxM}+ m`],
+  ] as const) {
+    marks.append(h('span', { style: `left:${(100 * m) / rampMaxM}%` }, label));
+  }
+  return h(
+    'div',
+    { class: 'panel legend hidden', 'aria-label': 'Water pressure legend' },
+    h('strong', {}, 'Water pressure'),
+    bar,
+    marks,
+    h(
+      'div',
+      { class: 'muted' },
+      `Below ${p.noSupplyM} m no supply · below ${p.lowM} m low · ${p.goodM} m+ good`,
+    ),
+  );
 }
 
 export function randomSeed(): number {

@@ -33,6 +33,10 @@ export interface Building {
   unpoweredMinutes: number;
   /** Batteries only: stored energy in MWh. */
   storedMWh: number;
+  /** Service reservoirs and water towers only: stored water in Ml. */
+  storedMl: number;
+  /** Minutes without water supply so far; 0 means supplied. */
+  dryMinutes: number;
 }
 
 /** A named industrial estate: a 4-connected group of industrial-zoned tiles. */
@@ -110,6 +114,81 @@ export interface PowerNetwork {
   feedMW: Map<number, number>;
 }
 
+/** Saved water bookkeeping: the solve cursor, daily abstraction counters and alert flags. */
+export interface WaterState {
+  /** Step of the current solve round (index into the solvable networks, then the finish step); -1 idle. */
+  cursor: number;
+  /** River water taken by intakes today, Ml (public supply licence). */
+  abstractedTodayMl: number;
+  /** River water taken directly by farms for irrigation today, Ml. */
+  farmAbstractedTodayMl: number;
+  /** Farm irrigation from the river has hit today's licence and stopped. */
+  irrigationCapped: boolean;
+  /** The public supply licence has been exceeded today (reported once a day). */
+  licenceBreached: boolean;
+  /** A storm overflow is spilling now. */
+  overflowing: boolean;
+  /** Volume spilled in the current or last overflow, Ml. */
+  spillMl: number;
+  /** Some customers have no supply (for start/end events). */
+  supplyAlert: boolean;
+  /** Some priority customers have no supply. */
+  priorityAlert: boolean;
+}
+
+/** One connected group of mains and water facilities (derived from the layout). */
+export interface WaterNetwork {
+  readonly id: number;
+  /** Tiles in the network (mains and facility footprints), ascending. */
+  readonly tiles: number[];
+  /** Water facilities in the network (ascending id), sewage works excluded. */
+  readonly facilities: Building[];
+  /** Has a treatment works or storage, so the solver must run for it. */
+  readonly solvable: boolean;
+}
+
+/** One connected group of road tiles (sewers) and sewage works (derived). */
+export interface SewerNetwork {
+  readonly id: number;
+  readonly tiles: number;
+  readonly works: Building[];
+}
+
+export interface WaterLayout {
+  /** Tile -> water network id (0 = none). */
+  netAt: Int32Array;
+  /** Tile -> pressure zone id (0 = none; booster tiles are 0). Boosters separate zones. */
+  zoneAt: Int32Array;
+  /** Tile -> sewer network id (0 = none). */
+  sewerAt: Int32Array;
+  networks: WaterNetwork[];
+  /** Ids of networks the solver runs for, in order. */
+  solvable: number[];
+  sewers: SewerNetwork[];
+}
+
+/** City-wide water figures (derived, for UI). Filled per solve round. */
+export interface WaterStats {
+  demandLps: number;
+  suppliedLps: number;
+  /** Treatment output possible right now (powered works, limited by intakes), l/s. */
+  productionLps: number;
+  storedMl: number;
+  storageMl: number;
+  customers: number;
+  lowPressure: number;
+  noSupply: number;
+  priorityNoSupply: number;
+  residentsNoSupply: number;
+  sewageInflowLps: number;
+  sewageCapacityLps: number;
+  spillLps: number;
+  untreatedLps: number;
+  irrigationLps: number;
+  licenceMlPerDay: number;
+  farmLicenceMlPerDay: number;
+}
+
 export interface SimCache {
   /** Tile -> building id (0 = none). */
   buildingAt: Int32Array;
@@ -123,6 +202,22 @@ export interface SimCache {
   outputMW: Map<number, number>;
   /** Whether rolling outages were in force at the last dispatch (for events). */
   shedding: boolean;
+  water: WaterLayout;
+  waterStats: WaterStats;
+  /** Facility id -> flow (l/s) at its last solve: output, abstraction, storage out (+) / in (-), booster throughput, sewage inflow. */
+  waterFlowLps: Map<number, number>;
+  /** Building id -> water use (l/s) at its last solve. */
+  waterUseLps: Map<number, number>;
+  /** Per-network figures gathered during the current solve round (UI only). */
+  waterRound: WaterNetworkResult[];
+}
+
+/** Network-level figures from one solve (for the UI). */
+export interface WaterNetworkResult {
+  demandLps: number;
+  suppliedLps: number;
+  /** Treatment output possible (powered works, limited by intakes), l/s. */
+  productionLps: number;
 }
 
 export interface SimState {
@@ -148,6 +243,7 @@ export interface SimState {
   demand: Record<ZoneId, number>;
   /** Next tile index the growth scan will look at. */
   growthCursor: number;
+  water: WaterState;
   /** Derived data; never saved. */
   cache: SimCache;
 }
@@ -181,6 +277,38 @@ export const emptyPowerStats = (): PowerStats => ({
   islands: [],
 });
 
+export const initialWaterState = (): WaterState => ({
+  cursor: -1,
+  abstractedTodayMl: 0,
+  farmAbstractedTodayMl: 0,
+  irrigationCapped: false,
+  licenceBreached: false,
+  overflowing: false,
+  spillMl: 0,
+  supplyAlert: false,
+  priorityAlert: false,
+});
+
+export const emptyWaterStats = (): WaterStats => ({
+  demandLps: 0,
+  suppliedLps: 0,
+  productionLps: 0,
+  storedMl: 0,
+  storageMl: 0,
+  customers: 0,
+  lowPressure: 0,
+  noSupply: 0,
+  priorityNoSupply: 0,
+  residentsNoSupply: 0,
+  sewageInflowLps: 0,
+  sewageCapacityLps: 0,
+  spillLps: 0,
+  untreatedLps: 0,
+  irrigationLps: 0,
+  licenceMlPerDay: 0,
+  farmLicenceMlPerDay: 0,
+});
+
 /** An empty cache sized for the world; call rebuildCache() to fill it. */
 export function emptyCache(world: WorldState): SimCache {
   const n = world.width * world.height;
@@ -193,6 +321,18 @@ export function emptyCache(world: WorldState): SimCache {
     loadKw: new Map(),
     outputMW: new Map(),
     shedding: false,
+    water: {
+      netAt: new Int32Array(n),
+      zoneAt: new Int32Array(n),
+      sewerAt: new Int32Array(n),
+      networks: [],
+      solvable: [],
+      sewers: [],
+    },
+    waterStats: emptyWaterStats(),
+    waterFlowLps: new Map(),
+    waterUseLps: new Map(),
+    waterRound: [],
   };
 }
 
@@ -234,6 +374,7 @@ export function createInitialState(opts: NewGameOptions): SimState {
     weather: blankWeather(),
     demand: emptyDemand(),
     growthCursor: 0,
+    water: initialWaterState(),
     cache: emptyCache(world),
   };
   initWeather(state);

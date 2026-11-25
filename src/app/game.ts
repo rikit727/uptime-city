@@ -15,6 +15,7 @@ import { loadSettings, saveSettings } from '../platform/settings';
 import type { Settings } from '../platform/settings';
 import { Hud, randomSeed } from '../ui/hud';
 import type { UiActions } from '../ui/hud';
+import { formatInt } from '../ui/format';
 import { TOOLS } from '../ui/tools';
 import type { ToolId } from '../ui/tools';
 import { CameraInput } from './cameraInput';
@@ -25,9 +26,9 @@ import { ToolController } from './toolController';
 const SIM_BUDGET_MS = 4;
 
 const WEATHER_ADVICE: Record<WeatherEventId, string> = {
-  heatwave: 'Expect high demand for cooling and water.',
+  heatwave: 'Expect high demand for cooling, water and irrigation.',
   coldSnap: 'Expect high heating demand.',
-  storm: 'Wind turbines shut down in very strong wind.',
+  storm: 'Wind turbines shut down in very strong wind, and sewers may overflow.',
 };
 
 export class Game {
@@ -109,6 +110,42 @@ export class Game {
       case 'powerRestored':
         this.toast('Power supply restored across the city.', 'good');
         break;
+      case 'waterSupplyLost':
+        this.toast(
+          `${formatInt(ev.buildings)} buildings have no water (${formatInt(ev.residents)} residents). Check treatment works, intakes, power and mains.`,
+          'error',
+        );
+        break;
+      case 'waterSupplyRestored':
+        this.toast('Water supply restored to every customer.', 'good');
+        break;
+      case 'priorityCustomersWithoutWater':
+        this.toast(
+          `${ev.buildings === 1 ? 'A priority customer has' : `${ev.buildings} priority customers have`} lost water supply. Restore it urgently.`,
+          'error',
+        );
+        break;
+      case 'sewerOverflow':
+        this.toast(
+          `Storm overflow: sewage works overwhelmed, spilling ${Math.round(ev.spillLps)} l/s into the river.`,
+          'warn',
+        );
+        break;
+      case 'sewerOverflowEnded':
+        this.toast(`Storm overflow stopped after spilling ${ev.spilledMl.toFixed(1)} Ml.`);
+        break;
+      case 'abstractionLicenceBreached':
+        this.toast(
+          `Abstraction licence breached: ${ev.usedMl.toFixed(1)} Ml taken today against ${ev.licenceMl} Ml licensed.`,
+          'warn',
+        );
+        break;
+      case 'irrigationLicenceReached':
+        this.toast(
+          `Farm irrigation licence used up (${ev.licenceMl} Ml today). Farms by the river switch to the mains or go without until midnight.`,
+          'warn',
+        );
+        break;
       default:
         break;
     }
@@ -183,6 +220,9 @@ export class Game {
       case 'KeyH':
         this.hud.openHelp();
         break;
+      case 'KeyO':
+        this.toggleWaterOverlay();
+        break;
     }
   }
 
@@ -239,7 +279,14 @@ export class Game {
         this.renderer.setGridVisible(v);
       },
       helpClosed: () => this.updateSettings({ seenHelp: true }),
+      toggleWaterOverlay: () => this.toggleWaterOverlay(),
     };
+  }
+
+  private toggleWaterOverlay(): void {
+    const on = !this.renderer.waterOverlay;
+    this.renderer.setWaterOverlay(on);
+    this.hud.setWaterOverlay(on);
   }
 
   private toast(msg: string, kind: 'info' | 'good' | 'warn' | 'error' = 'info'): void {

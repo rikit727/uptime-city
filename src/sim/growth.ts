@@ -7,15 +7,17 @@
  * Growth (every tick, sliced): a cursor walks `scanTilesPerTick` tiles per tick.
  * An empty zoned tile can sprout a building if its zone has positive demand,
  * a substation that can draw power covers it, and a building type for that
- * zone and density fits with the tile as its top-left corner and a road along
- * its edge. Occupancy then grows hourly with demand while powered, and falls
- * after a long outage. Land value, services and commute times join the growth
+ * zone and density fits with the tile as its top-left corner, a road along its
+ * edge and a water main with good pressure beside it (farms may use the river
+ * instead). Occupancy then grows hourly with demand while powered and supplied
+ * with water, and falls after a long power or water outage. Land value, services and commute times join the growth
  * test in later milestones (see ARCHITECTURE.md decision log).
  */
-import { GROWTH, zoneTypeByCode, grownTypesFor } from './data';
+import { GROWTH, WATER, zoneTypeByCode, grownTypesFor } from './data';
 import type { GrownBuildingDef } from './data';
 import { addBuilding, grownDefOf, jobsOf, residentsOf } from './buildings';
 import { isEnergised } from './power';
+import { waterServiceFor } from './water';
 import type { Building, SimState } from './state';
 import { Terrain } from './types';
 import type { ZoneId } from './types';
@@ -87,7 +89,8 @@ export function fitsAt(state: SimState, def: GrownBuildingDef, x: number, y: num
     for (let dx = 0; dx < fw; dx++) {
       const t = tileIndex(w, x + dx, y + dy);
       if (w.zone[t] !== zone || w.density[t] !== dens) return false;
-      if (w.road[t] !== 0 || w.power[t] !== 0 || w.terrain[t] !== Terrain.Land) return false;
+      if (w.road[t] !== 0 || w.power[t] !== 0 || w.water[t] !== 0) return false;
+      if (w.terrain[t] !== Terrain.Land) return false;
       if (state.cache.buildingAt[t] !== 0) return false;
     }
   }
@@ -113,6 +116,7 @@ export function growSlice(state: SimState, count = GROWTH.scanTilesPerTick): num
     state.growthCursor = (state.growthCursor + 1) % n;
     const z = w.zone[t]!;
     if (z === 0 || state.cache.buildingAt[t] !== 0 || w.road[t] !== 0 || w.power[t] !== 0) continue;
+    if (w.water[t] !== 0) continue;
     const zone = zoneTypeByCode(z);
     if (!zone) continue;
     const demand = state.demand[zone.id];
@@ -120,7 +124,9 @@ export function growSlice(state: SimState, count = GROWTH.scanTilesPerTick): num
     if (!state.rng.chance(GROWTH.spawnChance * demand)) continue;
     const x = t % w.width;
     const y = (t - x) / w.width;
-    const options = grownTypesFor(z, w.density[t]!).filter((def) => fitsAt(state, def, x, y));
+    const options = grownTypesFor(z, w.density[t]!).filter(
+      (def) => fitsAt(state, def, x, y) && waterServiceFor(state, def, x, y),
+    );
     if (options.length === 0) continue;
     const total = options.reduce((s, d) => s + d.weight, 0);
     let pick = state.rng.next() * total;
@@ -143,9 +149,9 @@ export function updateOccupancy(state: SimState): void {
   for (const b of state.buildings) {
     const def = grownDefOf(b);
     if (!def) continue;
-    if (b.unpoweredMinutes > GROWTH.outageGraceMinutes) {
+    if (b.unpoweredMinutes > GROWTH.outageGraceMinutes || b.dryMinutes > WATER.outageGraceMinutes) {
       b.occupancy = clamp(b.occupancy - GROWTH.occupancyDeclinePerHour, 0, 1);
-    } else if (b.unpoweredMinutes === 0) {
+    } else if (b.unpoweredMinutes === 0 && b.dryMinutes === 0) {
       b.occupancy = clamp(
         b.occupancy + GROWTH.occupancyGrowthPerHour * state.demand[def.zone],
         0,

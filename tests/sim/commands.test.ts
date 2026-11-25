@@ -5,8 +5,10 @@ import {
   GAME,
   POWER,
   ROADS,
+  WATER,
   facilityDef,
   lineType,
+  mainType,
   roadClass,
   zoneType,
 } from '../../src/sim/data';
@@ -214,7 +216,8 @@ describe('bulldoze', () => {
     });
     const r = sim.dispatch({ type: 'bulldoze', from: { x: 10, y: 10 }, to: { x: 12, y: 12 } });
     expect(r.ok).toBe(true);
-    expect(r.cost).toBe(3 * ROADS.demolishCostPerTile);
+    // Roads come with a water main, which is cleared too.
+    expect(r.cost).toBe(3 * (ROADS.demolishCostPerTile + WATER.mainDemolishCostPerTile));
     expect(sim.state.world.road.some((v) => v !== 0)).toBe(false);
     expect(sim.state.world.zone.some((v) => v !== 0)).toBe(false);
   });
@@ -379,5 +382,121 @@ describe('bulldoze buildings', () => {
     expect(sim.state.buildings).toHaveLength(0);
     expect(sim.state.cache.buildingAt.some((v) => v !== 0)).toBe(false);
     expect(sim.state.cache.network.islands).toHaveLength(0);
+  });
+});
+
+describe('water commands', () => {
+  it('builds a river intake only on the riverbank', () => {
+    const sim = testSim();
+    expect(
+      sim.dispatch({ type: 'placeFacility', facility: 'intake', at: { x: 40, y: 10 } }),
+    ).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/riverbank/) as unknown as string,
+    });
+    expect(
+      sim.dispatch({ type: 'placeFacility', facility: 'intake', at: { x: 58, y: 10 } }).ok,
+    ).toBe(true);
+    // On the right bank too.
+    expect(
+      sim.dispatch({ type: 'placeFacility', facility: 'intake', at: { x: 63, y: 10 } }).ok,
+    ).toBe(true);
+  });
+
+  it('lays and upgrades mains, never downgrades, and charges pipe bridges', () => {
+    const sim = testSim();
+    const per = mainType('feeder').costPerTile;
+    const r = sim.dispatch({
+      type: 'buildMain',
+      main: 'feeder',
+      from: { x: 55, y: 5 },
+      to: { x: 66, y: 5 },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.cost).toBe(9 * per + 3 * per * WATER.mainWaterCostMultiplier);
+    expect(sim.state.world.water[at(sim, 55, 5)]).toBe(mainType('feeder').code);
+    const down = sim.dispatch({
+      type: 'buildMain',
+      main: 'distribution',
+      from: { x: 55, y: 5 },
+      to: { x: 66, y: 5 },
+    });
+    expect(down.ok).toBe(false);
+    const up = sim.dispatch({
+      type: 'buildMain',
+      main: 'trunk',
+      from: { x: 55, y: 5 },
+      to: { x: 57, y: 5 },
+    });
+    expect(up.ok).toBe(true);
+    expect(sim.state.world.water[at(sim, 56, 5)]).toBe(mainType('trunk').code);
+  });
+
+  it('roads lay a distribution main but keep a larger one', () => {
+    const sim = testSim();
+    sim.dispatch({ type: 'buildMain', main: 'trunk', from: { x: 5, y: 5 }, to: { x: 10, y: 5 } });
+    sim.dispatch({
+      type: 'buildRoad',
+      roadClass: 'local',
+      from: { x: 5, y: 5 },
+      to: { x: 20, y: 5 },
+    });
+    expect(sim.state.world.water[at(sim, 7, 5)]).toBe(mainType('trunk').code);
+    expect(sim.state.world.water[at(sim, 15, 5)]).toBe(mainType('distribution').code);
+    sim.dispatch({ type: 'bulldoze', from: { x: 15, y: 5 }, to: { x: 15, y: 5 } });
+    expect(sim.state.world.water[at(sim, 15, 5)]).toBe(0);
+  });
+
+  it('keeps utilities apart: lines skip water facilities, mains skip power facilities', () => {
+    const sim = testSim();
+    sim.dispatch({ type: 'placeFacility', facility: 'treatmentWorks', at: { x: 10, y: 10 } });
+    sim.dispatch({ type: 'placeFacility', facility: 'substation', at: { x: 20, y: 10 } });
+    expect(
+      sim.dispatch({
+        type: 'buildLine',
+        line: 'distribution',
+        from: { x: 5, y: 11 },
+        to: { x: 15, y: 11 },
+      }).ok,
+    ).toBe(false);
+    expect(
+      sim.dispatch({
+        type: 'buildMain',
+        main: 'feeder',
+        from: { x: 15, y: 11 },
+        to: { x: 25, y: 11 },
+      }).ok,
+    ).toBe(false);
+    // A main through the treatment works is fine (it connects).
+    expect(
+      sim.dispatch({
+        type: 'buildMain',
+        main: 'feeder',
+        from: { x: 5, y: 11 },
+        to: { x: 15, y: 11 },
+      }).ok,
+    ).toBe(true);
+    // Zoning skips mains.
+    const z = sim.preview({
+      type: 'zone',
+      zone: 'residential',
+      density: 'low',
+      from: { x: 14, y: 11 },
+      to: { x: 15, y: 11 },
+    });
+    expect(z.affected).toHaveLength(0);
+  });
+
+  it('water facilities draw power and stop when unpowered', () => {
+    const sim = testSim();
+    sim.dispatch({ type: 'placeFacility', facility: 'treatmentWorks', at: { x: 10, y: 10 } });
+    sim.step(10);
+    const works = sim.state.buildings[0]!;
+    expect(works.unpoweredMinutes).toBeGreaterThan(0);
+    sim.dispatch({ type: 'placeFacility', facility: 'gasPlant', at: { x: 14, y: 10 } });
+    sim.dispatch({ type: 'placeFacility', facility: 'substation', at: { x: 17, y: 10 } });
+    sim.step(10);
+    expect(works.unpoweredMinutes).toBe(0);
+    expect(sim.state.cache.loadKw.get(works.id)).toBe(facilityDef('treatmentWorks').powerKw);
   });
 });

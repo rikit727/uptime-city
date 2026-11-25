@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CURRENT_SAVE_VERSION,
+  MIGRATIONS,
   SAVE_FORMAT,
   createSaveFile,
   migrateSave,
@@ -9,6 +10,7 @@ import {
 } from '../../src/platform/saveFormat';
 import { rleDecode, rleEncode } from '../../src/sim/serialize';
 import { Simulation } from '../../src/sim/simulation';
+import { waterSupplyCommands } from '../sim/helpers';
 
 function playedSim(): Simulation {
   const sim = Simulation.newGame({ seed: 555 });
@@ -48,6 +50,14 @@ function playedSim(): Simulation {
     to: { x: 21, y: 67 },
   });
   sim.dispatch({ type: 'placeFacility', facility: 'battery', at: { x: 22, y: 70 } });
+  const water = waterSupplyCommands(sim.state.world, [70, 100], (x) => ({ x, y: 65 }), {
+    x: 10,
+    y: 68,
+  });
+  for (const cmd of water) {
+    const r = sim.dispatch(cmd);
+    if (!r.ok) throw new Error(r.reason);
+  }
   sim.step(2003);
   return sim;
 }
@@ -165,9 +175,46 @@ describe('migrations', () => {
     const sim = simulationFromSave(save);
     expect(sim.state.buildings).toHaveLength(0);
     expect(sim.state.world.road[102]).toBe(1);
+    expect(sim.state.world.water[102]).toBe(1);
+    expect(sim.state.world.water[99]).toBe(0);
     expect(sim.state.rules.weatherEvents).toBe(true);
     sim.step(1500); // runs fine after migration
     expect(sim.state.tick).toBe(1540);
+  });
+
+  it('upgrades a version 2 save (milestone 2): mains under roads, building water fields', () => {
+    const v2 = MIGRATIONS[1]!({
+      format: SAVE_FORMAT,
+      version: 1,
+      meta: { gameName: 'x', label: 'm2', savedAt: '', day: 1, minute: 400, cash: 5, seed: 3 },
+      state: {
+        seed: 3,
+        tick: 40,
+        minute: 400,
+        rngState: 1234,
+        cash: 5,
+        world: {
+          width: 128,
+          height: 128,
+          terrain: [0, 16384],
+          road: [0, 128 * 20, 2, 30, 0, 16384 - 128 * 20 - 30],
+          zone: [0, 16384],
+          density: [0, 16384],
+        },
+      },
+    });
+    (v2.state as { buildings: unknown[] }).buildings = [[1, 1, 5, 21, 0.5, 0, 0]];
+    const save = parseSaveFile(JSON.stringify(v2));
+    expect(save.version).toBe(CURRENT_SAVE_VERSION);
+    const sim = simulationFromSave(save);
+    expect(sim.state.world.water[128 * 20 + 5]).toBe(1);
+    expect(sim.state.world.water[128 * 21 + 5]).toBe(0);
+    expect(sim.state.buildings[0]).toMatchObject({ storedMl: 0, dryMinutes: 0 });
+    expect(sim.state.water.cursor).toBe(-1);
+    expect(sim.state.cache.water.networks).toHaveLength(1);
+    sim.step(30);
+    // No water source yet, so the old house is now without water.
+    expect(sim.state.buildings[0]!.dryMinutes).toBeGreaterThan(0);
   });
 
   it('runs each step in order up to the target version', () => {

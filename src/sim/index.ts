@@ -11,6 +11,10 @@ export type {
   PowerNetwork,
   PowerStats,
   SimState,
+  WaterLayout,
+  WaterNetwork,
+  WaterState,
+  WaterStats,
   WeatherState,
 } from './state';
 export { serializeState, deserializeState } from './serialize';
@@ -23,6 +27,7 @@ export type { EstateStats } from './estates';
 export { cityTotals } from './growth';
 export type { CityTotals } from './growth';
 export { availableMW, temperatureFactor } from './power';
+export { LPS_PER_MLD, isFarm, nearRiver, serviceTile, sewerTile, waterDefOf } from './water';
 export { daylight, solarElevation } from './weather';
 export * from './data';
 export * from './time';

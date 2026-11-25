@@ -1,5 +1,6 @@
 /** Zoned (not yet built) land, drawn as flat coloured tiles by zone type and density. */
 import { Color, Group } from 'three';
+import type { MeshLambertMaterial } from 'three';
 import { ZONES, densityByCodeOf } from '../../sim';
 import type { SimSnapshot } from '../../sim';
 import { TileInstances } from './tileInstances';
@@ -21,6 +22,11 @@ export class ZoneLayer {
         this.colours.set(z.code * 4 + d, new Color(z.colours[id]));
       }
     }
+  }
+
+  /** Dim zoning so an overlay stands out. */
+  setDim(on: boolean): void {
+    (this.tiles.mesh.material as MeshLambertMaterial).color.set(on ? '#5a5a5a' : '#ffffff');
   }
 
   /** Force a rebuild on the next update (e.g. after loading a different game). */

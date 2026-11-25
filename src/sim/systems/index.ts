@@ -6,6 +6,7 @@ import { clockSystem } from './clock';
 import { demandSystem } from './demand';
 import { growthSystem } from './growth';
 import { powerSystem } from './power';
+import { waterSystem } from './water';
 import type { SimSystem } from './types';
 import { weatherSystem } from './weather';
 
@@ -16,5 +17,6 @@ export const SYSTEMS: readonly SimSystem[] = [
   weatherSystem,
   demandSystem,
   powerSystem,
+  waterSystem,
   growthSystem,
 ];

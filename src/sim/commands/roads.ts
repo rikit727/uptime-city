@@ -1,8 +1,9 @@
 import { removeBuildings } from '../buildings';
-import { ROADS, roadClass } from '../data';
+import { ROADS, mainType, roadClass } from '../data';
 import { rebuildEstates } from '../estates';
 import { roadPath } from '../geometry';
 import type { SimState } from '../state';
+import { rebuildWater } from '../water';
 import { isWater } from '../world';
 import {
   buildingsUnder,
@@ -20,8 +21,10 @@ import type { BuildRoadCommand, CommandPlan } from './types';
  * replaced (upgrade or downgrade) at the full cost of the new class; tiles that
  * already carry this class are skipped. Roads over water become bridges at a
  * cost multiplier. A road over zoned land removes the zoning, and over a grown
- * building (including a farm) demolishes it. Power facilities block roads;
- * power lines can share a tile with a road.
+ * building (including a farm) demolishes it. Facilities block roads; power
+ * lines and water mains can share a tile with a road. Every road comes with a
+ * sewer and, where there is no main yet, a 150 mm distribution main (included
+ * in the road's cost).
  */
 export function planBuildRoad(state: SimState, cmd: BuildRoadCommand): CommandPlan {
   if (!isValidCoord(cmd.from) || !isValidCoord(cmd.to)) return rejected('Invalid road position.');
@@ -52,23 +55,26 @@ export function planBuildRoad(state: SimState, cmd: BuildRoadCommand): CommandPl
     affected,
     blocked,
     cost,
-    ['road', 'zone', 'building'],
+    ['road', 'zone', 'building', 'water'],
     `There is already a ${def.name.toLowerCase()} here.`,
     grown,
   );
-  return blocked.length > 0 ? refuse(plan, 'A power facility is in the way.') : plan;
+  return blocked.length > 0 ? refuse(plan, 'A facility is in the way.') : plan;
 }
 
 export function applyBuildRoad(state: SimState, cmd: BuildRoadCommand, plan: CommandPlan): void {
   const code = roadClass(cmd.roadClass).code;
+  const main = mainType('distribution').code;
   const w = state.world;
   removeBuildings(state, plan.demolish);
   let rezoned = false;
   for (const i of plan.affected) {
     w.road[i] = code;
+    if (w.water[i] === 0) w.water[i] = main;
     if (w.zone[i] !== 0) rezoned = true;
     w.zone[i] = 0;
     w.density[i] = 0;
   }
   if (rezoned) rebuildEstates(state);
+  rebuildWater(state);
 }

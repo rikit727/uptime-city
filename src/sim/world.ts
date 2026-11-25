@@ -19,6 +19,13 @@ export interface WorldState {
   readonly density: Uint8Array;
   /** Power line type code per tile (0 = none). See src/data/power.json `lines`. */
   readonly power: Uint8Array;
+  /** Water main type code per tile (0 = none). See src/data/water.json `mains`. */
+  readonly water: Uint8Array;
+  /**
+   * Water pressure per main tile from the last network solve, whole metres of head
+   * (0 = no water). Saved, because growth and supply status read it between solves.
+   */
+  readonly pressure: Uint8Array;
 }
 
 export function createWorld(width: number, height: number): WorldState {
@@ -31,6 +38,8 @@ export function createWorld(width: number, height: number): WorldState {
     zone: new Uint8Array(n),
     density: new Uint8Array(n),
     power: new Uint8Array(n),
+    water: new Uint8Array(n),
+    pressure: new Uint8Array(n),
   };
 }
 

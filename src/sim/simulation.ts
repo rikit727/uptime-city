@@ -12,7 +12,17 @@ import { createInitialState } from './state';
 import type { NewGameOptions, SimState } from './state';
 import { SYSTEMS } from './systems';
 import type { TickContext } from './systems';
-import type { Building, Estate, GameRules, PowerNetwork, PowerStats, WeatherState } from './state';
+import type {
+  Building,
+  Estate,
+  GameRules,
+  PowerNetwork,
+  PowerStats,
+  WaterLayout,
+  WaterState,
+  WaterStats,
+  WeatherState,
+} from './state';
 import type { ZoneId } from './types';
 import type { WorldState } from './world';
 
@@ -48,6 +58,12 @@ export interface SimSnapshot {
   /** Building id -> load (kW) and facility id -> output (MW) at the last dispatch. */
   readonly loadKw: ReadonlyMap<number, number>;
   readonly outputMW: ReadonlyMap<number, number>;
+  /** Saved water counters and the derived figures, layout and per-building flows. */
+  readonly water: Readonly<WaterState>;
+  readonly waterStats: Readonly<WaterStats>;
+  readonly waterLayout: Readonly<WaterLayout>;
+  readonly waterFlowLps: ReadonlyMap<number, number>;
+  readonly waterUseLps: ReadonlyMap<number, number>;
 }
 
 export class Simulation {
@@ -58,6 +74,7 @@ export class Simulation {
     building: 0,
     power: 0,
     supply: 0,
+    water: 0,
   };
   readonly commandLog: LoggedCommand[] = [];
   private events: SimEvent[] = [];
@@ -131,6 +148,11 @@ export class Simulation {
       network: s.cache.network,
       loadKw: s.cache.loadKw,
       outputMW: s.cache.outputMW,
+      water: s.water,
+      waterStats: s.cache.waterStats,
+      waterLayout: s.cache.water,
+      waterFlowLps: s.cache.waterFlowLps,
+      waterUseLps: s.cache.waterUseLps,
     };
   }
 

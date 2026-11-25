@@ -52,11 +52,18 @@ export class BuildingLayer {
   private readonly scl = new Vector3();
   private readonly colourCache = new Map<string, Color>();
   private rotorList: Rotor[] = [];
+  /** Body materials, greyed out while an overlay is shown. */
+  private readonly bodyMaterials: MeshLambertMaterial[] = [];
+  private dim = false;
   private builtKey = '';
   private lastBuild = -Infinity;
 
   constructor(width: number, height: number) {
-    const mat = () => new MeshLambertMaterial({ color: '#ffffff' });
+    const mat = () => {
+      const m = new MeshLambertMaterial({ color: '#ffffff' });
+      this.bodyMaterials.push(m);
+      return m;
+    };
     this.batches = {
       box: new InstanceBatch(this.group, unitBox(), mat(), 1024),
       gable: new InstanceBatch(this.group, unitGable(), mat(), 512),
@@ -87,6 +94,13 @@ export class BuildingLayer {
     this.lastBuild = -Infinity;
   }
 
+  /** Dim buildings (and fields) so an overlay stands out. */
+  setDim(on: boolean): void {
+    this.dim = on;
+    for (const m of this.bodyMaterials) m.color.set(on ? '#5a5a5a' : '#ffffff');
+    (this.fields.mesh.material as MeshLambertMaterial).color.set(on ? '#5a5a5a' : '#ffffff');
+  }
+
   private colour(c: string): Color {
     let col = this.colourCache.get(c);
     if (!col) {
@@ -111,7 +125,7 @@ export class BuildingLayer {
       this.lastBuild = now;
       this.rebuild(snap);
     }
-    this.litMaterial.emissiveIntensity = 0.95 * night;
+    this.litMaterial.emissiveIntensity = (this.dim ? 0.25 : 0.95) * night;
     this.spinRotors(snap, dt);
   }
 
@@ -168,7 +182,7 @@ export class BuildingLayer {
       this.scl.set(p.w, p.h, 1);
       this.m.compose(this.pos, this.q.identity(), this.scl);
       const index = this.rotors.add(this.m, colour);
-      const cap = def.role === 'facility' ? def.capacityMW : 1;
+      const cap = def.role === 'facility' && def.utility === 'power' ? def.capacityMW : 1;
       this.rotorList.push({
         index,
         position: this.pos.clone(),

@@ -7,13 +7,26 @@
 import { rebuildCache } from './cache';
 import { buildingDef } from './data';
 import { Rng } from './rng';
-import { emptyCache } from './state';
-import type { Building, Estate, GameRules, SimState, WeatherState } from './state';
+import { emptyCache, initialWaterState } from './state';
+import type { Building, Estate, GameRules, SimState, WaterState, WeatherState } from './state';
 import type { ZoneId } from './types';
 import type { WorldState } from './world';
 
-/** A building as saved: [id, code, x, y, occupancy, unpoweredMinutes, storedMWh]. */
-export type SerializedBuilding = [number, number, number, number, number, number, number];
+/**
+ * A building as saved:
+ * [id, code, x, y, occupancy, unpoweredMinutes, storedMWh, storedMl, dryMinutes].
+ */
+export type SerializedBuilding = [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
 
 export interface SerializedWorld {
   width: number;
@@ -23,6 +36,8 @@ export interface SerializedWorld {
   zone: number[];
   density: number[];
   power: number[];
+  water: number[];
+  pressure: number[];
 }
 
 export interface SerializedState {
@@ -40,6 +55,7 @@ export interface SerializedState {
   weather: WeatherState;
   demand: Record<ZoneId, number>;
   growthCursor: number;
+  water: WaterState;
 }
 
 export function rleEncode(data: Uint8Array): number[] {
@@ -90,6 +106,8 @@ export function serializeState(state: SimState): SerializedState {
       zone: rleEncode(w.zone),
       density: rleEncode(w.density),
       power: rleEncode(w.power),
+      water: rleEncode(w.water),
+      pressure: rleEncode(w.pressure),
     },
     buildings: state.buildings.map((b) => [
       b.id,
@@ -99,6 +117,8 @@ export function serializeState(state: SimState): SerializedState {
       b.occupancy,
       b.unpoweredMinutes,
       b.storedMWh,
+      b.storedMl,
+      b.dryMinutes,
     ]),
     nextBuildingId: state.nextBuildingId,
     estates: state.estates.map((e) => ({ ...e })),
@@ -106,6 +126,7 @@ export function serializeState(state: SimState): SerializedState {
     weather: { ...state.weather, event: state.weather.event ? { ...state.weather.event } : null },
     demand: { ...state.demand },
     growthCursor: state.growthCursor,
+    water: { ...state.water },
   };
 }
 
@@ -136,6 +157,8 @@ export function deserializeState(data: SerializedState): SimState {
     zone: rleDecode(arr(wd.zone, 'zones'), n),
     density: rleDecode(arr(wd.density, 'densities'), n),
     power: rleDecode(arr(wd.power, 'power lines'), n),
+    water: rleDecode(arr(wd.water, 'water mains'), n),
+    pressure: rleDecode(arr(wd.pressure, 'water pressures'), n),
   };
   const buildings = arr(data.buildings, 'buildings').map((raw) => parseBuilding(raw, world));
   for (let k = 1; k < buildings.length; k++) {
@@ -172,16 +195,29 @@ export function deserializeState(data: SerializedState): SimState {
     },
     demand: { ...demand },
     growthCursor: num(data.growthCursor, 'growth cursor') % n,
+    water: parseWater(data.water),
     cache: emptyCache(world),
   };
   rebuildCache(state);
   return state;
 }
 
+function parseWater(raw: unknown): WaterState {
+  if (typeof raw !== 'object' || raw === null) throw new Error('Save is missing the water state.');
+  const r = raw as Record<string, unknown>;
+  const out = initialWaterState();
+  for (const k of Object.keys(out) as (keyof WaterState)[]) {
+    const v = r[k];
+    if (typeof out[k] === 'boolean') (out as unknown as Record<string, boolean>)[k] = v === true;
+    else (out as unknown as Record<string, number>)[k] = num(v, `water ${k}`);
+  }
+  return out;
+}
+
 function parseBuilding(raw: unknown, world: WorldState): Building {
-  if (!Array.isArray(raw) || raw.length !== 7) throw new Error('Save has a corrupt building.');
-  const [id, code, x, y, occupancy, unpoweredMinutes, storedMWh] = raw.map((v) =>
-    num(v, 'building data'),
+  if (!Array.isArray(raw) || raw.length !== 9) throw new Error('Save has a corrupt building.');
+  const [id, code, x, y, occupancy, unpoweredMinutes, storedMWh, storedMl, dryMinutes] = raw.map(
+    (v) => num(v, 'building data'),
   ) as SerializedBuilding;
   const def = buildingDef(code);
   if (!def) throw new Error(`Save has an unknown building type (${code}).`);
@@ -189,5 +225,5 @@ function parseBuilding(raw: unknown, world: WorldState): Building {
   if (x < 0 || y < 0 || x + fw > world.width || y + fd > world.height) {
     throw new Error('Save has a building outside the map.');
   }
-  return { id, code, x, y, occupancy, unpoweredMinutes, storedMWh };
+  return { id, code, x, y, occupancy, unpoweredMinutes, storedMWh, storedMl, dryMinutes };
 }

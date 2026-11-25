@@ -1,11 +1,12 @@
 /** The build toolbar's tools. Pure data: the app binds behaviour, the UI draws buttons. */
-import type { FacilityId, LineTypeId, RoadClassId, ZoneId } from '../sim';
+import type { FacilityId, LineTypeId, MainTypeId, RoadClassId, ZoneId } from '../sim';
 
 export type ToolId =
   | { kind: 'inspect' }
   | { kind: 'road'; roadClass: RoadClassId }
   | { kind: 'zone'; zone: ZoneId }
   | { kind: 'line'; line: LineTypeId }
+  | { kind: 'main'; main: MainTypeId }
   | { kind: 'facility'; facility: FacilityId }
   | { kind: 'bulldoze' };
 
@@ -15,7 +16,7 @@ export interface ToolDef {
   /** Keyboard shortcut (KeyboardEvent.code) and its display label. */
   code: string;
   keyLabel: string;
-  group: 'select' | 'roads' | 'zones' | 'power' | 'demolish';
+  group: 'select' | 'roads' | 'zones' | 'power' | 'water' | 'demolish';
   tool: ToolId;
   swatch?: string;
 }
@@ -150,6 +151,70 @@ export const TOOLS: readonly ToolDef[] = [
     tool: { kind: 'facility', facility: 'battery' },
   },
   {
+    key: 'main:feeder',
+    label: 'Feeder main',
+    code: 'KeyJ',
+    keyLabel: 'J',
+    group: 'water',
+    tool: { kind: 'main', main: 'feeder' },
+  },
+  {
+    key: 'main:trunk',
+    label: 'Trunk main',
+    code: 'KeyK',
+    keyLabel: 'K',
+    group: 'water',
+    tool: { kind: 'main', main: 'trunk' },
+  },
+  {
+    key: 'facility:intake',
+    label: 'River intake',
+    code: 'Digit9',
+    keyLabel: '9',
+    group: 'water',
+    tool: { kind: 'facility', facility: 'intake' },
+  },
+  {
+    key: 'facility:treatmentWorks',
+    label: 'Treatment works',
+    code: 'Digit0',
+    keyLabel: '0',
+    group: 'water',
+    tool: { kind: 'facility', facility: 'treatmentWorks' },
+  },
+  {
+    key: 'facility:serviceReservoir',
+    label: 'Service reservoir',
+    code: 'Minus',
+    keyLabel: '-',
+    group: 'water',
+    tool: { kind: 'facility', facility: 'serviceReservoir' },
+  },
+  {
+    key: 'facility:waterTower',
+    label: 'Water tower',
+    code: 'Equal',
+    keyLabel: '=',
+    group: 'water',
+    tool: { kind: 'facility', facility: 'waterTower' },
+  },
+  {
+    key: 'facility:booster',
+    label: 'Booster pump',
+    code: 'KeyC',
+    keyLabel: 'C',
+    group: 'water',
+    tool: { kind: 'facility', facility: 'booster' },
+  },
+  {
+    key: 'facility:sewageWorks',
+    label: 'Sewage works',
+    code: 'KeyY',
+    keyLabel: 'Y',
+    group: 'water',
+    tool: { kind: 'facility', facility: 'sewageWorks' },
+  },
+  {
     key: 'bulldoze',
     label: 'Bulldoze',
     code: 'KeyB',
@@ -167,6 +232,8 @@ export function toolKey(t: ToolId): string {
       return `zone:${t.zone}`;
     case 'line':
       return `line:${t.line}`;
+    case 'main':
+      return `main:${t.main}`;
     case 'facility':
       return `facility:${t.facility}`;
     default:

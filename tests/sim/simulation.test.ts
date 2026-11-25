@@ -3,6 +3,7 @@ import type { Command } from '../../src/sim';
 import { GAME } from '../../src/sim/data';
 import { Simulation, replay } from '../../src/sim/simulation';
 import { MINUTES_PER_DAY, clockString, dayOf } from '../../src/sim/time';
+import { waterSupplyCommands } from './helpers';
 
 const script: { atTick: number; cmd: Command }[] = [
   {
@@ -33,10 +34,18 @@ const script: { atTick: number; cmd: Command }[] = [
   { atTick: 25, cmd: { type: 'placeFacility', facility: 'windTurbine', at: { x: 5, y: 34 } } },
 ];
 
+/** The fixed script plus a water supply placed for this seed's river (at tick 30). */
+function scriptFor(seed: number): { atTick: number; cmd: Command }[] {
+  const world = Simulation.newGame({ seed }).state.world;
+  const water = waterSupplyCommands(world, [3, 12], () => ({ x: 40, y: 20 }), { x: 32, y: 30 });
+  return [...script, ...water.map((cmd) => ({ atTick: 30, cmd }))];
+}
+
 function runScripted(seed: number, ticks: number): Simulation {
   const sim = Simulation.newGame({ seed });
+  const steps = scriptFor(seed);
   for (let t = 0; t <= ticks; t++) {
-    for (const s of script) if (s.atTick === t) sim.dispatch(s.cmd);
+    for (const s of steps) if (s.atTick === t) sim.dispatch(s.cmd);
     if (t < ticks) sim.step();
   }
   return sim;
@@ -82,7 +91,7 @@ describe('determinism', () => {
   it('replaying the command log reproduces the game', () => {
     const live = runScripted(7, 1200);
     const replayed = replay({ seed: 7 }, live.commandLog, 1200);
-    expect(live.commandLog.length).toBe(script.length);
+    expect(live.commandLog.length).toBe(scriptFor(7).length);
     expect(replayed.hash()).toBe(live.hash());
   });
 });

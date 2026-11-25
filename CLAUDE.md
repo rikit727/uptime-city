@@ -52,7 +52,8 @@ Before committing: `npm run lint && npm test && npm run build`.
   dispatch figures, estates per tile) is never saved and is rebuilt on load
   by `rebuildCache()`. It must be a pure function of saved state. Commands
   that change zoning, lines or facilities call `rebuildEstates()` /
-  `rebuildNetwork()`; use `addBuilding()` / `removeBuildings()` so the tile
+  `rebuildNetwork()`; commands that change roads, mains or water facilities
+  call `rebuildWater()`; use `addBuilding()` / `removeBuildings()` so the tile
   index stays in step.
 - **Imports:** in `src/` outside the sim, import sim things from `src/sim` (the index),
   not deep paths (tests may import deep paths). Use `import type` for types (lint enforces).
@@ -111,9 +112,12 @@ entry with:
 - `zone` and `densities` (empty list for agricultural), `weight` (how often
   growth picks it among the types that fit), `footprint` `[w, d]` in tiles.
 - `residents`, `jobs` (at full occupancy), `powerKw` (peak load),
-  `priority` (load-shedding order, index into `power.json: priorityNames`),
-  `heightJitter`. Farms also take `fields` (`arable` | `pasture` |
-  `glasshouse`, coloured by season from `fieldColours`) and `exportPerDay`.
+  `waterLpd` (average water use per day at full occupancy, litres),
+  `priority` (load-shedding order, index into `power.json: priorityNames`;
+  0 also makes it a priority water customer), `heightJitter`. Farms also take
+  `fields` (`arable` | `pasture` | `glasshouse`, coloured by season from
+  `fieldColours`), `irrigationLpd` (irrigation or livestock water per day) and
+  `exportPerDay`.
 - `parts`: the model, in tile units relative to the footprint's top-left
   corner. Each part has `shape` (`box`, `gable`, `cylinder`, `tunnel`,
   `rotor`), centre `x`/`z`, optional base `y`, size `w`/`d`/`h`, `colour` (one
@@ -122,7 +126,8 @@ entry with:
 
 No code changes are needed. Growth places a type when its whole footprint is
 empty zoned land of the same zone and density, with a road along one edge,
-covered by an energised substation. A new primitive shape needs a unit
+covered by an energised substation, with a water main at 15 m or more beside it
+(farms may draw from a nearby river instead). A new primitive shape needs a unit
 geometry in `src/render/layers/shapes.ts`, a batch in `layers/buildings.ts`
 and the `PartShape` union in `src/sim/data.ts`.
 
@@ -137,6 +142,22 @@ buildings), plus `storageMWh`/`efficiency` (batteries), `serviceRadius`
 `kind` needs handling in `src/sim/power.ts` (`availableMW`, dispatch). Line
 types (`lines`) need `id`, `code`, `capacityMW`, `costPerTile`, `colour`, the
 id in `LineTypeId`, a pylon height in `render/layers/power.ts` and a tool.
+
+### A water facility or main type
+
+Facilities live in `src/data/water.json` (`facilities`), codes 300+. Fields:
+`id`, `code`, `name`, `kind` (`intake`, `treatment`, `storage`, `booster`,
+`sewage`), `footprint`, `cost`, `jobs`, `powerKw` (constant load; 0 = needs no
+power), `priority`, `parts`, plus by kind: `capacityMlPerDay` (intake,
+treatment, sewage), `licenceMlPerDay` (intake), `storageMl` and `headM`
+(storage), `headM` (treatment outlet), `boostM` (booster). Add the id to
+`WaterFacilityId` in `src/sim/types.ts` and a tool in `src/ui/tools.ts`. A new
+`kind` needs handling in `src/sim/water.ts` (`solveNetwork`, `finishRound`) and
+the inspector. Main types (`mains`) need `id`, `code`, `name`, `diameterMm`,
+`capacityLps`, `baseLossPerKm`, `lossPerKmAtCapacity`, `costPerTile`, `colour`,
+the id in `MainTypeId` and a tool. Pressure thresholds, demand curves,
+irrigation, the farm licence, storm runoff and the overlay ramp are in the same
+file.
 
 ### An asset type (from milestone 4)
 
@@ -156,3 +177,9 @@ section in milestone 7.
   (`.state`, `.hash()`, `.commandLog`, `.dispatch(cmd)`).
 - Settings live in `localStorage['uptime-city-settings']`; saves in IndexedDB
   `uptime-city-saves`.
+- Water: `uptimeCity.debugSim.state.cache.waterStats` (city figures),
+  `.state.world.pressure` (per-tile head), `.state.cache.water` (networks,
+  zones, sewers). Press O for the pressure overlay.
+- Tests on a fixed map: `tests/sim/helpers.ts` has `poweredTown()` (which adds
+  `waterSupply()` unless told not to) and `riverWater()`; on generated maps use
+  `waterSupplyCommands()`.

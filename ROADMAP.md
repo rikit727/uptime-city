@@ -24,3 +24,8 @@ with the milestone and reason.
 - Buildings redeveloping in place to a higher density when demand and land
   value allow, instead of needing demolition and regrowth.
 - Weekday/weekend demand patterns (the v1 calendar has no days of the week).
+- Water: booster pumps with a flow capacity and energy use that scales with
+  the flow and head they lift (v1 boosters add a fixed head at a constant
+  load); flows shared across looped mains (v1 routes each customer along one
+  best path); a separate raw-water main network; sewer pipe capacities and
+  storm tanks (v1 sewers are implicit and only the works has a capacity).

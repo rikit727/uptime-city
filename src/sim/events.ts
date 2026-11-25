@@ -10,4 +10,11 @@ export type SimEvent =
   | { type: 'weatherEventStarted'; event: WeatherEventId; name: string; days: number }
   | { type: 'weatherEventEnded'; event: WeatherEventId; name: string }
   | { type: 'powerShortfall'; shedMW: number; buildingsOff: number }
-  | { type: 'powerRestored' };
+  | { type: 'powerRestored' }
+  | { type: 'waterSupplyLost'; buildings: number; residents: number }
+  | { type: 'waterSupplyRestored' }
+  | { type: 'priorityCustomersWithoutWater'; buildings: number }
+  | { type: 'sewerOverflow'; spillLps: number }
+  | { type: 'sewerOverflowEnded'; spilledMl: number }
+  | { type: 'abstractionLicenceBreached'; usedMl: number; licenceMl: number }
+  | { type: 'irrigationLicenceReached'; licenceMl: number };
