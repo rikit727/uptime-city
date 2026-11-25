@@ -3,7 +3,17 @@
  * inspector, toasts and modals. It changes the game only through `UiActions`.
  */
 import { GAME_NAME } from '../config';
-import { ASSETS, GAME, ZONES, cityTotals, isOpen, mttrMinutes, weatherEvent } from '../sim';
+import {
+  ASSETS,
+  FAULT,
+  GAME,
+  TRAFFIC,
+  ZONES,
+  cityTotals,
+  isOpen,
+  mttrMinutes,
+  weatherEvent,
+} from '../sim';
 import type { Command, DensityId, SimSnapshot } from '../sim';
 import type { SlotId, SlotSummary } from '../platform/saves';
 import { clear, h } from './dom';
@@ -29,13 +39,23 @@ export interface UiActions {
   importSave(): Promise<void>;
   newGame(seed: number): void;
   setGrid(visible: boolean): void;
-  toggleWaterOverlay(): void;
+  /** Show this overlay, or hide it if it is already shown. */
+  toggleOverlay(id: 'water' | 'traffic'): void;
   helpClosed(): void;
   /** Send a command to the sim; failures are shown as a toast. */
   dispatch(cmd: Command): void;
   /** Move the camera to a tile and inspect it. */
   focusTile(tile: number): void;
   setThreshold(below: number): void;
+  /** Plan maintenance tool: how works on roads are booked. */
+  setWorksOptions(patch: Partial<WorksOptions>): void;
+}
+
+/** How the Plan maintenance tool books works on roads. */
+export interface WorksOptions {
+  night: boolean;
+  closure: 'full' | 'lane';
+  combine: boolean;
 }
 
 const SLOT_LABELS: Record<SlotId, string> = {
@@ -54,12 +74,20 @@ export class Hud {
   private readonly incidentsEl = h('button', { class: 'chip incidents', title: 'Incidents' });
   private readonly thresholdBar = h('div', { class: 'density-bar threshold-bar hidden' });
   private readonly thresholdButtons = new Map<number, HTMLButtonElement>();
+  private readonly worksBar = h('div', { class: 'density-bar works-bar hidden' });
+  private readonly worksButtons: {
+    night: HTMLButtonElement;
+    lane: HTMLButtonElement;
+    combine: HTMLButtonElement;
+  };
   private readonly timeEl = h('span', { class: 'time' });
   private readonly cashEl = h('span', { class: 'cash' });
   private readonly weatherEl = h('span', { class: 'chip weather' });
   private readonly powerEl = h('span', { class: 'chip power' });
   private readonly waterEl = h('button', { class: 'chip water', title: 'Water' });
+  private readonly trafficEl = h('button', { class: 'chip traffic', title: 'Traffic' });
   private readonly legendEl = buildPressureLegend();
+  private readonly trafficLegendEl = buildTrafficLegend();
   private readonly popEl = h('span', { class: 'chip population' });
   private lastStatsMinute = -1;
   private readonly speedButtons: HTMLButtonElement[] = [];
@@ -72,6 +100,21 @@ export class Hud {
   private lastSpeed = -1;
 
   constructor(private readonly actions: UiActions) {
+    const toggle = (label: string, title: string) => h('button', { title }, label);
+    this.worksButtons = {
+      night: toggle(
+        'Night works',
+        'Book works on roads for tonight from 20:00: less disruption, but dearer and slower',
+      ),
+      lane: toggle(
+        'Lane closure',
+        'Close one lane instead of the whole road: traffic keeps moving, work is slower',
+      ),
+      combine: toggle(
+        'Combine',
+        'Join works already booked on the same street: one closure, and a discount',
+      ),
+    };
     this.inspector = new Inspector(actions);
     this.inbox = new Inbox(actions);
     this.modal = new Modal(() => this.closeModal());
@@ -83,6 +126,7 @@ export class Hud {
       this.buildToolbar(),
       this.statusEl,
       this.legendEl,
+      this.trafficLegendEl,
       this.inspector.el,
       this.inbox.el,
       this.toasts.el,
@@ -98,7 +142,8 @@ export class Hud {
   // ---- top bar -----------------------------------------------------------
 
   private buildTopBar(): HTMLElement {
-    this.waterEl.addEventListener('click', () => this.actions.toggleWaterOverlay());
+    this.waterEl.addEventListener('click', () => this.actions.toggleOverlay('water'));
+    this.trafficEl.addEventListener('click', () => this.actions.toggleOverlay('traffic'));
     this.incidentsEl.addEventListener('click', () => this.inbox.toggle());
     const speeds = h('div', { class: 'speeds', role: 'group', 'aria-label': 'Game speed' });
     GAME.speeds.forEach((s, i) => {
@@ -129,6 +174,7 @@ export class Hud {
       this.weatherEl,
       this.powerEl,
       this.waterEl,
+      this.trafficEl,
       this.incidentsEl,
       this.popEl,
       speeds,
@@ -181,13 +227,33 @@ export class Hud {
     all.addEventListener('click', () => this.actions.setThreshold(101));
     this.thresholdButtons.set(101, all);
     this.thresholdBar.append(all);
+    const wb = this.worksButtons;
+    wb.night.addEventListener('click', () =>
+      this.actions.setWorksOptions({ night: !wb.night.classList.contains('active') }),
+    );
+    wb.lane.addEventListener('click', () =>
+      this.actions.setWorksOptions({
+        closure: wb.lane.classList.contains('active') ? 'full' : 'lane',
+      }),
+    );
+    wb.combine.addEventListener('click', () =>
+      this.actions.setWorksOptions({ combine: !wb.combine.classList.contains('active') }),
+    );
+    this.worksBar.append(wb.night, wb.lane, wb.combine);
     bar.append(this.thresholdBar);
+    bar.append(this.worksBar);
     return bar;
   }
 
-  setActiveTool(tool: ToolId, density: DensityId, threshold = 70): void {
+  setActiveTool(tool: ToolId, density: DensityId, threshold = 70, works?: WorksOptions): void {
     this.thresholdBar.classList.toggle('hidden', tool.kind !== 'maintain');
+    this.worksBar.classList.toggle('hidden', tool.kind !== 'maintain');
     for (const [t, b] of this.thresholdButtons) b.classList.toggle('active', t === threshold);
+    if (works) {
+      this.worksButtons.night.classList.toggle('active', works.night);
+      this.worksButtons.lane.classList.toggle('active', works.closure === 'lane');
+      this.worksButtons.combine.classList.toggle('active', works.combine);
+    }
     const key = toolKey(tool);
     for (const [k, b] of this.toolButtons) b.classList.toggle('active', k === key);
     const zone = tool.kind === 'zone' ? ZONES.types.find((z) => z.id === tool.zone) : undefined;
@@ -269,6 +335,7 @@ export class Hud {
       .join('\n');
 
     this.updateWaterChip(snap);
+    this.updateTrafficChip(snap);
     this.updateIncidentChip(snap);
 
     const t = cityTotals(snap);
@@ -307,7 +374,7 @@ export class Hud {
       ws.untreatedLps > 0.05
         ? `${ws.untreatedLps.toFixed(1)} l/s of sewage untreated (no works)`
         : '',
-      'Click to toggle the water pressure overlay (O)',
+      'Click to toggle the water pressure overlay (O cycles overlays)',
     ]
       .filter((x) => x !== '')
       .join('\n');
@@ -333,9 +400,48 @@ export class Hud {
     ].join('\n');
   }
 
-  setWaterOverlay(on: boolean): void {
-    this.waterEl.classList.toggle('active', on);
-    this.legendEl.classList.toggle('hidden', !on);
+  private updateTrafficChip(snap: SimSnapshot): void {
+    const t = snap.traffic;
+    const delay = Math.max(0, Math.round((t.congestion - 1) * 100));
+    let closed = 0;
+    let lanes = 0;
+    for (let i = 0; i < snap.world.road.length; i++) {
+      const f = snap.faults.tile[i]!;
+      if (f & FAULT.ROAD_CLOSED) closed++;
+      else if (f & FAULT.LANE_CLOSED) lanes++;
+    }
+    const active = snap.permits.filter((p) => p.start <= snap.minute).length;
+    const booked = snap.permits.length - active;
+    this.trafficEl.textContent =
+      t.tripsPerHour <= 0 && closed === 0 ? '🚗 No traffic' : `🚗 Delay +${delay}%`;
+    this.trafficEl.classList.toggle('alert', delay >= 40);
+    this.trafficEl.classList.toggle('warn', delay >= 15 && delay < 40);
+    const k = t.kpi;
+    this.trafficEl.title = [
+      `Congestion index ${t.congestion.toFixed(2)} (trips take ${delay}% longer than on empty roads)`,
+      `${formatInt(Math.round(t.tripsPerHour))} vehicle trips an hour, average ${t.avgTripMinutes.toFixed(1)} min`,
+      t.unservedPerHour >= 1
+        ? `${formatInt(Math.round(t.unservedPerHour))} trips an hour cannot get through (closed or unconnected roads)`
+        : '',
+      closed + lanes > 0
+        ? `Roadworks: ${closed} tile${closed === 1 ? '' : 's'} closed, ${lanes} with a lane closed`
+        : 'No roads closed',
+      `Street works permits: ${active} under way, ${booked} booked`,
+      k.permits > 0
+        ? `So far: ${k.combined} works combined (£${formatInt(k.combinedSavings)} saved), ${k.clashes} clashes, ${k.overruns} overruns`
+        : '',
+      'Click to toggle the traffic overlay (O cycles overlays)',
+    ]
+      .filter((x) => x !== '')
+      .join('\n');
+  }
+
+  /** Mark the active overlay's chip and show its legend. */
+  setOverlay(id: 'none' | 'water' | 'traffic'): void {
+    this.waterEl.classList.toggle('active', id === 'water');
+    this.legendEl.classList.toggle('hidden', id !== 'water');
+    this.trafficEl.classList.toggle('active', id === 'traffic');
+    this.trafficLegendEl.classList.toggle('hidden', id !== 'traffic');
   }
 
   // ---- modals ------------------------------------------------------------
@@ -358,7 +464,7 @@ export class Hud {
       h(
         'p',
         {},
-        'You run the city day to day. Lay out roads, zone land, keep the lights on and the taps running: buildings only grow where there is power and water. Traffic and budgets arrive in later milestones.',
+        'You run the city day to day. Lay out roads, zone land, keep the lights on and the taps running: buildings only grow where there is power and water. Budgets and services arrive in later milestones.',
       ),
       h(
         'ol',
@@ -392,6 +498,16 @@ export class Hud {
           'li',
           {},
           'Everything wears out: roads, mains, lines and plant lose condition every day (faster when busy) and fail more often as they age. Build a highways, water and electricity depot (Shift+1/2/3) beside a road: their crews drive out to repairs automatically. A burst main cuts off everyone downstream until a crew isolates and repairs it; a cable fault cuts the line. Open the incident inbox (` or the 🛠 chip) to re-prioritise work, send a particular crew or send bottled water to priority customers. Book planned maintenance with the Plan maintenance tool (;) or from the inspector, but note the asset is out of service while the crew works.',
+        ),
+        h(
+          'li',
+          {},
+          'Traffic: homes send commuters to jobs and shops in the morning and back in the evening; industry adds lorries and farms add tractors. Busy roads slow down (the 🚗 chip shows the delay), wear out faster and slow your crews. Long commutes slow growth, so give busy areas avenues or highways. Press O to cycle the water and traffic overlays.',
+        ),
+        h(
+          'li',
+          {},
+          'Roadworks: resurfacing and work on mains under roads close the road (or one lane) and need a street works permit for their street. With the Plan maintenance tool you can book night works (little traffic, but dearer and slower), close just one lane, and combine works on the same street: one dig, a 25% discount, and quicker resurfacing over a fresh trench. Clashing permits are flagged in the inbox, where you can combine them.',
         ),
         h(
           'li',
@@ -561,6 +677,30 @@ function buildPressureLegend(): HTMLElement {
       { class: 'muted' },
       `Below ${p.noSupplyM} m no supply · below ${p.lowM} m low · ${p.goodM} m+ good`,
     ),
+  );
+}
+
+/** Legend for the traffic overlay (hidden until the overlay is on). */
+function buildTrafficLegend(): HTMLElement {
+  const { ramp, rampMaxRatio, closed, lane } = TRAFFIC.overlay;
+  const bar = h('div', {
+    class: 'legend-bar',
+    style: `background: linear-gradient(to right, ${ramp.join(', ')})`,
+  });
+  const marks = h('div', { class: 'legend-marks' });
+  for (const r of [0, 0.5]) {
+    marks.append(h('span', { style: `left:${(100 * r) / rampMaxRatio}%` }, `${r * 100}%`));
+  }
+  marks.append(h('span', { style: 'left:100%' }, `${Math.round(rampMaxRatio * 100)}%+`));
+  const swatch = (colour: string) =>
+    h('span', { class: 'legend-swatch', style: `background:${colour}` });
+  return h(
+    'div',
+    { class: 'panel legend hidden', 'aria-label': 'Traffic legend' },
+    h('strong', {}, 'Traffic (flow / capacity)'),
+    bar,
+    marks,
+    h('div', { class: 'muted' }, swatch(closed), ' road closed · ', swatch(lane), ' lane closed'),
   );
 }
 

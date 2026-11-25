@@ -6,11 +6,11 @@
  * the previous version to MIGRATIONS. Never edit an existing migration.
  */
 import { GAME_NAME } from '../config';
-import { ASSETS, Simulation, dayOf, deserializeState, serializeState } from '../sim';
+import { ASSETS, Simulation, TRAFFIC, dayOf, deserializeState, serializeState } from '../sim';
 import type { SerializedState } from '../sim';
 
 export const SAVE_FORMAT = 'uptime-city-save';
-export const CURRENT_SAVE_VERSION = 4;
+export const CURRENT_SAVE_VERSION = 5;
 
 export interface SaveMeta {
   gameName: string;
@@ -153,6 +153,81 @@ export const MIGRATIONS: Record<number, (save: RawSave) => RawSave> = {
         incidents: [],
         workOrders: [],
         crews: [],
+      },
+    };
+  },
+  // v4 -> v5 (milestone 5): traffic flows, the traffic round and commute times,
+  // street works permits; work orders gain closure, night, permit and combined
+  // fields (existing works keep closing the road fully, without a permit).
+  4: (save) => {
+    const state = save.state as Record<string, unknown>;
+    const world = state.world as Record<string, unknown>;
+    const width = Number(world.width);
+    const height = Number(world.height);
+    const tiles = width * height;
+    const cells = Math.ceil(width / TRAFFIC.cellSize) * Math.ceil(height / TRAFFIC.cellSize);
+    const road = new Uint8Array(tiles);
+    const rle = world.road as number[];
+    for (let k = 0, pos = 0; k + 1 < rle.length; k += 2) {
+      road.fill(rle[k]!, pos, pos + rle[k + 1]!);
+      pos += rle[k + 1]!;
+    }
+    const orders = (state.workOrders as Record<string, unknown>[]).map((o) => {
+      const asset = o.asset as { layer: string; id: number };
+      const onRoad = asset.layer === 'road' || (asset.layer === 'main' && road[asset.id] !== 0);
+      return {
+        ...o,
+        closure: onRoad ? 'full' : 'none',
+        night: false,
+        permitId: 0,
+        combined: false,
+      };
+    });
+    return {
+      ...save,
+      version: 5,
+      state: {
+        ...state,
+        world: { ...world, traffic: [0, tiles] },
+        workOrders: orders,
+        traffic: {
+          cursor: -1,
+          table: {
+            load: [-1, cells],
+            prod: {
+              outbound: [0, cells],
+              return: [0, cells],
+              freight: [0, cells],
+              farm: [0, cells],
+            },
+            attr: {
+              outbound: [0, cells],
+              return: [0, cells],
+              freight: [0, cells],
+              farm: [0, cells],
+            },
+          },
+          pending: [0, tiles],
+          commute: [0, cells],
+          roundTrips: 0,
+          roundTripMinutes: 0,
+          roundFreeMinutes: 0,
+          roundUnserved: 0,
+          tripsPerHour: 0,
+          avgTripMinutes: 0,
+          congestion: 1,
+          unservedPerHour: 0,
+          nextPermitId: 1,
+          kpi: {
+            permits: 0,
+            clashes: 0,
+            combined: 0,
+            combinedSavings: 0,
+            overruns: 0,
+            nightWorks: 0,
+          },
+        },
+        permits: [],
       },
     };
   },

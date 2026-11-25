@@ -5,7 +5,7 @@
 import { ASSETS, facilityDef } from '../sim';
 import type { Command, DensityId, Simulation } from '../sim';
 import type { GameRenderer } from '../render/renderer';
-import type { Hud } from '../ui/hud';
+import type { Hud, WorksOptions } from '../ui/hud';
 import type { ToolId } from '../ui/tools';
 import { formatMoney } from '../ui/format';
 import type { CameraInput } from './cameraInput';
@@ -15,6 +15,8 @@ export class ToolController {
   density: DensityId = 'low';
   /** Maintenance tool: raise work for assets below this condition. */
   threshold = ASSETS.maintenanceThresholds[1] ?? 70;
+  /** Maintenance tool: how works on roads are booked (permits). */
+  works: WorksOptions = { night: false, closure: 'full', combine: true };
   private dragStart: number | null = null;
   private dragEnd: number | null = null;
   private pointerId: number | null = null;
@@ -45,20 +47,26 @@ export class ToolController {
     this.cancel();
     this.tool = tool;
     this.hover = null;
-    this.hud.setActiveTool(tool, this.density, this.threshold);
+    this.hud.setActiveTool(tool, this.density, this.threshold, this.works);
     if (tool.kind !== 'inspect') this.hud.inspector.show(null);
     this.hud.setStatus(hintFor(tool));
   }
 
   setDensity(d: DensityId): void {
     this.density = d;
-    this.hud.setActiveTool(this.tool, d, this.threshold);
+    this.hud.setActiveTool(this.tool, d, this.threshold, this.works);
     this.refreshPreview();
   }
 
   setThreshold(below: number): void {
     this.threshold = below;
-    this.hud.setActiveTool(this.tool, this.density, below);
+    this.hud.setActiveTool(this.tool, this.density, below, this.works);
+    this.refreshPreview();
+  }
+
+  setWorksOptions(patch: Partial<WorksOptions>): void {
+    this.works = { ...this.works, ...patch };
+    this.hud.setActiveTool(this.tool, this.density, this.threshold, this.works);
     this.refreshPreview();
   }
 
@@ -145,6 +153,11 @@ export class ToolController {
     if (!cmd) return;
     const result = this.getSim().dispatch(cmd);
     if (!result.ok) this.hud.toasts.show(result.reason ?? 'That is not possible here.', 'warn');
+    else if (result.note)
+      this.hud.toasts.show(
+        `${result.note.charAt(0).toUpperCase()}${result.note.slice(1)}.`,
+        'info',
+      );
     if (this.tool.kind === 'facility') this.refreshPreview();
   }
 
@@ -173,7 +186,15 @@ export class ToolController {
       case 'bulldoze':
         return { type: 'bulldoze', from, to };
       case 'maintain':
-        return { type: 'raiseMaintenance', from, to, below: this.threshold };
+        return {
+          type: 'raiseMaintenance',
+          from,
+          to,
+          below: this.threshold,
+          night: this.works.night,
+          closure: this.works.closure,
+          combine: this.works.combine,
+        };
       default:
         return null;
     }
@@ -200,6 +221,7 @@ export class ToolController {
             ? [`Maintenance on ${n} site${n === 1 ? '' : 's'}`, formatMoney(plan.cost)]
             : [`${n} tile${n === 1 ? '' : 's'}`, formatMoney(plan.cost)];
       if (d > 0) parts.push(`demolishes ${d} building${d === 1 ? '' : 's'}`);
+      if (plan.note) parts.push(plan.note);
       this.hud.setStatus(parts.join(' · '));
     } else {
       this.hud.setStatus(plan.reason ?? 'Not possible here.', 'error');
@@ -233,6 +255,6 @@ function hintFor(tool: ToolId): string {
     case 'bulldoze':
       return 'Drag a rectangle to clear roads, lines, buildings and zoning.';
     case 'maintain':
-      return 'Drag a rectangle to book maintenance for every asset below the condition threshold ([ / ] to change it).';
+      return 'Drag a rectangle to book maintenance for every asset below the condition threshold ([ / ] to change it). Works on roads need a permit: choose night works, a lane closure or combining below.';
   }
 }

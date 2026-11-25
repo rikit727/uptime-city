@@ -8,6 +8,7 @@ import gameJson from '../data/game.json';
 import growthJson from '../data/growth.json';
 import powerJson from '../data/power.json';
 import roadsJson from '../data/roads.json';
+import trafficJson from '../data/traffic.json';
 import waterJson from '../data/water.json';
 import weatherJson from '../data/weather.json';
 import zonesJson from '../data/zones.json';
@@ -53,6 +54,10 @@ export interface RoadClassDef {
   speedKmh: number;
   costPerTile: number;
   colour: string;
+  /** Share of capacity left with one lane closed for works. */
+  laneClosureCapacity: number;
+  /** How an emergency repair closes this road. */
+  repairClosure: 'full' | 'lane';
 }
 
 export interface ZoneTypeDef {
@@ -461,6 +466,61 @@ export const ROADS = {
   demolishCostPerTile: roadsJson.demolishCostPerTile,
   classes: roadsJson.classes as RoadClassDef[],
 };
+
+// ---- traffic and roadworks --------------------------------------------------------
+
+export type TripPurpose = 'outbound' | 'return' | 'freight' | 'farm';
+export const TRIP_PURPOSES: readonly TripPurpose[] = ['outbound', 'return', 'freight', 'farm'];
+
+export interface TrafficConfig {
+  cellSize: number;
+  assignIntervalMinutes: number;
+  assignOffset: number;
+  /** Road tiles settled per tick by the assignment (at least one origin per tick). */
+  nodesPerTick: number;
+  /** Share of a new round's flows blended into the saved flows. */
+  blend: number;
+  bpr: { alpha: number; beta: number; maxRatio: number };
+  /** Gravity model: destinations weighted by exp(-minutes / this). */
+  deterrenceMinutes: number;
+  trips: {
+    outboundPerResident: number;
+    visitsPerCommercialJob: number;
+    freightPerIndustrialJob: number;
+    freightPerCommercialJob: number;
+    farmTripsPerFarm: number;
+  };
+  pcu: { hgv: number; farm: number };
+  /** Share of each purpose's daily trips in each hour (normalised to sum to 1). */
+  curves: Record<TripPurpose, number[]>;
+  commute: { goodMinutes: number; badMinutes: number; minFactor: number };
+  crews: { maxSlowdown: number };
+  roadworks: {
+    night: { startHour: number; endHour: number; costFactor: number; durationFactor: number };
+    laneClosure: { durationFactor: number };
+    combine: { discount: number; resurfaceFactor: number };
+    allowanceMinutes: number;
+  };
+  cars: { pcuPerCar: number; maxPerTile: number; maxCars: number };
+  overlay: { ramp: string[]; rampMaxRatio: number; closed: string; lane: string };
+}
+
+const rawTraffic = trafficJson as unknown as TrafficConfig;
+const shares = (curve: number[]): number[] => {
+  const sum = curve.reduce((s, v) => s + v, 0);
+  return curve.map((v) => (sum > 0 ? v / sum : 0));
+};
+export const TRAFFIC: TrafficConfig = {
+  ...rawTraffic,
+  curves: Object.fromEntries(TRIP_PURPOSES.map((p) => [p, shares(rawTraffic.curves[p])])) as Record<
+    TripPurpose,
+    number[]
+  >,
+};
+for (const p of TRIP_PURPOSES) {
+  if (TRAFFIC.curves[p].length !== 24)
+    throw new Error(`Traffic curve ${p} needs 24 hourly values.`);
+}
 
 export const ZONES = {
   densities: zonesJson.densities as DensityDef[],

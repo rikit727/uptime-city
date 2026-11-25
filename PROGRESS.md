@@ -10,7 +10,7 @@ Spec: `docs/BUILD_PROMPT.md`. Architecture: `ARCHITECTURE.md`. Conventions: `CLA
 | 2   | Sim core: time, seasons, weather, growth (incl. farms), power          | **Done**    |
 | 3   | Water, wastewater, pressure zones, irrigation                          | **Done**    |
 | 4   | Asset condition, incidents, crews, work orders                         | **Done**    |
-| 5   | Traffic, roadworks, permits                                            | Not started |
+| 5   | Traffic, roadworks, permits                                            | **Done**    |
 | 6   | Services, landmarks, events, pollution, economy, happiness, complaints | Not started |
 | 7   | Overlays, dashboard, menus and settings, scenarios, UI polish          | Not started |
 | 8   | Performance pass and final docs review                                 | Not started |
@@ -189,6 +189,61 @@ Spec: `docs/BUILD_PROMPT.md`. Architecture: `ARCHITECTURE.md`. Conventions: `CLA
   its repair rebuilds the power network (about 2 ms on that grid), the only
   spike; a crew route is under 1 ms.
 
+## Milestone 5: what exists
+
+- Data (`src/data/traffic.json`): 8×8-tile traffic cells, assignment interval
+  (15 min) and per-tick search budget (8,000 road tiles), blend, BPR (α 0.15,
+  β 4, v/c capped at 3), gravity deterrence (12 min), trip rates (outbound per
+  resident, visitors per shop job, freight per industrial/commercial job, farm
+  trips), PCU factors (lorry 2.5, tractor 3), hourly curves for four purposes
+  (outbound peak 08:00, return peak 17:00, freight, farm), commute growth factor,
+  crew congestion cap, roadworks factors, car density and overlay ramp.
+  `roads.json` gains `laneClosureCapacity` and `repairClosure` per class.
+- Traffic model (`src/sim/traffic.ts`, system `traffic`, before assets): trip
+  table per round (saved), one shortest-path tree per origin by BPR travel time,
+  flows accumulated in a saved buffer and blended into `world.traffic` (PCU/h)
+  when the round ends; congestion index, mean trip time, unserved trips, per-cell
+  commute times. Road wear now follows `flow / capacity` (`peakLoad.road`).
+  Growth's spawn chance falls with long commutes.
+- Closures: on-site work closes the road fully (`FAULT.ROAD_CLOSED`, impassable)
+  or one lane (`FAULT.LANE_CLOSED`, reduced capacity); traffic re-routes. Emergency
+  repairs close one lane on avenues and highways. Crews route by congested time
+  (capped at 4×) and pass closures.
+- Roadworks and permits (`src/sim/roadworks.ts`): every job on a road tile (or a
+  main under one) runs under a street works permit on its road segment
+  (segments split at junctions). Emergency permits start at once; planned works
+  are booked now or as night works (from 20:00, ×1.5 cost, ×1.3 time), with a full
+  or lane closure. Crews wait for the slot. Clashes (same segment, overlapping
+  slots) are flagged and counted; works on the same street combine (one permit,
+  25% off, resurfacing waits for the dig and takes half the time over it); the
+  `combinePermits` command merges clashing permits. Overruns are flagged.
+  Roadworks KPIs: permits, clashes, combined works and savings, overruns, night
+  jobs.
+- Render/UI: cosmetic cars (InstancedMesh, sampled from flows, moving at congested
+  speed, stopped when paused), traffic overlay (YlOrRd ramp by v/c, closures dark
+  grey, lane closures lilac, legend), O cycles overlays (water → traffic → off),
+  🚗 chip with the delay and a tooltip (trips, mean trip time, closures, permits,
+  roadworks KPIs), roadworks and permit calendar in the inbox (slots, flags,
+  clash and combine buttons), inspector rows for capacity, flow, speed now,
+  closures and permits, Night works / Lane closure / Combine toggles for the Plan
+  maintenance tool with cost and permit notes in the status line, toasts for
+  clashes, overruns and booking notes, help text and controls. The inspector now
+  scrolls instead of running off the top of the screen.
+- Saves: version 5 with a v4 → v5 migration (tested).
+- Tests (150, 17 new): BPR curve and travel times, trip generation by hour,
+  assignment loading the roads between homes and jobs, congestion building up
+  with density, a full closure re-routing traffic, a lane closure keeping traffic
+  moving at reduced capacity, determinism and a save made mid-round continuing
+  identically, slicing within the search budget, crews slowed and re-routed by
+  congestion, road segments, permits on planned works (none off-road), emergency
+  permits, clash flagging and `combinePermits` refunds, automatic combining with
+  the dig-then-resurface order and shorter resurfacing, night works timing and
+  cost, overruns, save round-trip with permits, v4 migration.
+- Measured on a fully built 128×128 grid (7,400 buildings, 4,600 road tiles):
+  traffic averages 1.0 ms per tick while a round runs, worst 2.7 ms on the tick
+  that builds the trip table; a full-map round takes about 128 ticks (2 game
+  hours). Smaller towns finish a round in one or a few ticks.
+
 ## In progress
 
 Nothing.
@@ -225,8 +280,19 @@ Nothing.
   customers (attribution by network, decision 50), so two bursts in one
   network double-count in the inbox; city customer-minutes count each customer
   once.
-- Road defects and closures have no effect yet beyond the incident: traffic and
-  permits use them in M5. Crews ignore closures.
+- Crews pass closures (decision 54/67) but are slowed by congestion.
+- On a fully built map a traffic round takes about 2 game hours, so flows lag the
+  peaks a little; the round-start tick (trip table) costs ~2.7 ms. Candidates for
+  M8: a junction-level graph, or building the trip table across ticks.
+- Traffic flows are two-way per tile; there are no junction delays or signals.
+- Road closures only apply while a crew is on site, not for the whole permit
+  slot (decision 62). Night works only start at 20:00; crews do not stop at 06:00.
+- Clashes and overruns are flagged and counted but not fined (fines with the M6
+  economy).
+- The congestion index compares trip times with free-flow times on the routes
+  chosen, so it reads 1.00 for the first round after loading an M4 save.
+- Building a local road across an avenue replaces the avenue tile at the crossing
+  (M1 road tool behaviour).
 - No condition overlay yet (M7 overlays); condition shows in the inspector.
 - Repairs are paid even when cash is negative; there is no income until M6.
 - `rebuildNetwork` takes about 2 ms on a dense power grid and runs on every
@@ -239,30 +305,31 @@ Nothing.
 
 ## Exact next step
 
-Start **milestone 5** (traffic, roadworks, permits):
+Start **milestone 6** (services, landmarks, events, pollution, economy,
+happiness, complaints). Suggested order, cutting from the end of the spec's list
+if the session runs short (events calendar first, then landmarks other than the
+stadium and shopping centre, then noise pollution):
 
-1. Data: `src/data/traffic.json` with trip rates per zone and building
-   (residents, jobs), morning/evening peak curves, BPR parameters (α 0.15,
-   β 4), assignment interval, cosmetic car density; road capacities and speeds
-   already live in `roads.json`.
-2. Traffic model (`src/sim/traffic.ts`): trip generation per zone (aggregated
-   per road tile or per zone cluster), congestion-aware shortest paths with the
-   BPR volume/delay function, assignment recalculated periodically and sliced
-   across ticks (cursor saved, like the water solve). Save per-tile volume or
-   travel time as a layer so loads stay deterministic; write traffic load into
-   `world.peakLoad.road` so road wear starts to depend on traffic.
-3. Closures: `cache.faults.tile` already has `FAULT.ROAD_CLOSED` for
-   excavations and resurfacing; closed tiles lose capacity (lane closure) or
-   all of it and traffic re-routes. Crews should use congested travel times in
-   `routing.ts` (`legMinutes`).
-4. Roadworks: planned resurfacing exists (maintenance orders); add night works
-   (less disruption, more cost and time), lane vs full closure, and permits:
-   every work order needs a booked slot on its segment; clashes flagged;
-   combining works on the same segment (e.g. a main renewal and resurfacing)
-   avoids digging twice and is rewarded. Roadworks/permit calendar in the inbox.
-5. Render/UI: cosmetic cars sampled from flows (InstancedMesh), traffic overlay
-   (colour-blind-safe ramp), congestion index chip, closures and diversions.
-6. Tests: BPR delay, assignment determinism, a roadworks closure re-routing
-   traffic, permits clash/combine, crews slowed by congestion, save round-trip
-   mid-assignment; update ARCHITECTURE.md (tick order: traffic before assets),
-   CLAUDE.md and this file.
+1. Economy first (`src/data/economy.json`, `src/sim/economy.ts`): taxes per zone
+   (farms at low rates plus `exportPerDay`), utility tariffs, running costs (crews,
+   energy, maintenance), department budgets for roads, water, power and services
+   (setting crew numbers per depot and the maintenance backlog), monthly accounts
+   (30-day months) and loans. Fines for licence breaches, spills, permit clashes
+   and overruns. Budget panel in the HUD.
+2. Services: fire, police, health (hospital = priority 0 customer), schools, waste
+   (depots, recycling centre, landfill, missed collections). Coverage by road
+   travel time from `cache.traffic.timeSec` (Dijkstra from each station, sliced,
+   saved cursor). Fire: hydrants on mains, firefighting flow lowering local
+   pressure through the water solve (test it), fire growth by building size,
+   response time and flow; random building fires.
+3. Landmarks (stadium, shopping centre first) as facilities with footprints,
+   utility demand and jobs; events calendar with traffic (extra trips to the
+   venue in the trip table), power, water, police and waste spikes.
+4. Pollution (air from industry, power plants, highways and traffic flows; noise)
+   spreading with distance; land value; growth using land value and services.
+5. Happiness (services, outages, commute times from `traffic.commute`, pollution)
+   and a complaints feed from real events ("No water on … for 3 hours").
+6. Tests: budget calculations, coverage by travel time, firefighting flow
+   lowering pressure, fire growth, pollution spread, happiness, save round-trip,
+   determinism; update ARCHITECTURE.md (tick order: services → growth → pollution
+   → economy → happiness), CLAUDE.md and this file.

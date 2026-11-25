@@ -13,6 +13,11 @@ export type {
   Estate,
   FaultCache,
   Incident,
+  Permit,
+  RoadClosure,
+  RoadworksKpis,
+  TrafficCache,
+  TrafficState,
   WorkOrder,
   GameRules,
   NewGameOptions,
@@ -48,6 +53,8 @@ export {
 } from './assets';
 export { isOpen, isWaterIncident, mttrMinutes, severityName } from './incidents';
 export { crewPosition, depotDefOf } from './crews';
+export { bprFactor, cellOfTile, commuteFactor, freeFlowSeconds, vcRatio } from './traffic';
+export { durationFactor, nightStart, permitSegments, slotLabel } from './roadworks';
 export * from './data';
 export * from './time';
 export * from './types';

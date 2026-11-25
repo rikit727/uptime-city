@@ -1,6 +1,8 @@
 /** Describes whatever is under the Inspect tool. Reads the snapshot only. */
 import {
+  FAULT,
   GAME,
+  slotLabel,
   LPS_PER_MLD,
   TILE_ASSET_LAYERS,
   ageYears,
@@ -80,7 +82,7 @@ export class Inspector {
     const r = snap.revisions;
     // Live figures (load, output, weather) refresh every 10 game minutes.
     const work = snap.workOrders.map((o) => o.status).join();
-    const key = `${i}:${r.road}:${r.zone}:${r.terrain}:${r.building}:${r.power}:${r.supply}:${r.water}:${Math.floor(snap.minute / 10)}:${snap.assets.nextIncidentId}:${snap.assets.nextOrderId}:${work}:${snap.cash < 0}`;
+    const key = `${i}:${r.road}:${r.zone}:${r.terrain}:${r.building}:${r.power}:${r.supply}:${r.water}:${r.traffic}:${snap.permits.length}:${Math.floor(snap.minute / 10)}:${snap.assets.nextIncidentId}:${snap.assets.nextOrderId}:${work}:${snap.cash < 0}`;
     if (key === this.shownKey) return;
     this.shownKey = key;
 
@@ -93,7 +95,7 @@ export class Inspector {
     if (road) {
       rows.push(['Road', water ? `${road.name} (bridge)` : road.name]);
       rows.push(['Speed limit', `${road.speedKmh} km/h`]);
-      rows.push(['Capacity', `${road.capacityVehPerHour.toLocaleString('en-GB')} vehicles/h`]);
+      this.trafficRows(snap, i, road.capacityVehPerHour, rows);
     }
     const line = lineTypeByCode(w.power[i]!);
     if (line) rows.push(['Power line', `${line.name}, rated ${line.capacityMW} MW`]);
@@ -145,6 +147,44 @@ export class Inspector {
   }
 
   /** Condition, age, risk and work for one asset; adds a "book maintenance" button. */
+  /** Flow, capacity, speed, closures and permits on a road tile. */
+  private trafficRows(snap: SimSnapshot, i: number, baseCap: number, rows: Row[]): void {
+    const tc = snap.trafficCache;
+    const f = snap.faults.tile[i]!;
+    const flow = snap.world.traffic[i]!;
+    const cap = tc.capacity[i]!;
+    const closed = (f & FAULT.ROAD_CLOSED) !== 0;
+    const lane = (f & FAULT.LANE_CLOSED) !== 0;
+    rows.push([
+      'Capacity',
+      closed
+        ? 'Closed for works'
+        : `${formatInt(Math.round(cap))} vehicles/h${lane ? ` (one lane closed; ${formatInt(baseCap)} normally)` : ''}`,
+    ]);
+    rows.push([
+      'Traffic',
+      `${formatInt(flow)} vehicles/h${cap > 0 ? ` (${Math.round((100 * flow) / cap)}% of capacity)` : ''}`,
+    ]);
+    const free = tc.freeSec[i]!;
+    const time = tc.timeSec[i]!;
+    if (!closed && free > 0 && time < Infinity) {
+      const speed = GAME.metresPerTile / 1000 / (time / 3600);
+      rows.push([
+        'Speed now',
+        `${Math.round(speed)} km/h${time > free * 1.05 ? ' (congested)' : ''}`,
+      ]);
+    }
+    for (const p of snap.permits) {
+      if (!p.tiles.includes(i)) continue;
+      const clash = (tc.clashes.get(p.id) ?? []).length > 0 ? ' · clashes with other works' : '';
+      const when = p.start <= snap.minute ? 'under way' : `from ${slotLabel(snap.minute, p.start)}`;
+      rows.push([
+        'Street works',
+        `Permit ${p.id} (${p.kind}, ${p.closure === 'full' ? 'road closed' : 'lane closed'}${p.night ? ', night works' : ''}) ${when}, until ${slotLabel(snap.minute, p.end)}${p.overrun ? ' · overrunning' : ''}${clash}`,
+      ]);
+    }
+  }
+
   private assetRows(
     snap: SimSnapshot,
     ref: AssetRef,

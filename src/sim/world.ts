@@ -29,13 +29,18 @@ export interface WorldState {
    * (0 = no water). Saved, because growth and supply status read it between solves.
    */
   readonly pressure: Uint8Array;
+  /**
+   * Traffic flow per road tile from the last assignment, PCU per hour (both
+   * directions). Saved, because travel times and road wear are derived from it.
+   */
+  readonly traffic: Uint16Array;
   /** Asset condition per tile and layer, in hundredths of a point (0..10000; 0 where no asset). */
   readonly condition: PerAssetLayer<Uint16Array>;
   /** Day (1-based) each tile asset was laid, for its age (0 = none). */
   readonly laid: PerAssetLayer<Uint16Array>;
   /**
    * Peak load share since the last daily decay, percent (main flow / capacity,
-   * line loading; road traffic from M5). Saved: decay reads it, then resets it.
+   * line loading, road traffic flow / capacity). Saved: decay reads it, then resets it.
    */
   readonly peakLoad: PerAssetLayer<Uint8Array>;
 }
@@ -58,6 +63,7 @@ export function createWorld(width: number, height: number): WorldState {
     power: new Uint8Array(n),
     water: new Uint8Array(n),
     pressure: new Uint8Array(n),
+    traffic: new Uint16Array(n),
     condition: perLayer(() => new Uint16Array(n)),
     laid: perLayer(() => new Uint16Array(n)),
     peakLoad: perLayer(() => new Uint8Array(n)),

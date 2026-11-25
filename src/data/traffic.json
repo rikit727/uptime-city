@@ -1,0 +1,46 @@
+{
+  "//": "Traffic and roadworks. Trips are generated per traffic cell (cellSize × cellSize tiles) from the buildings in it, using hourly curves (relative weights per hour, normalised in data.ts), and assigned to the road network with congestion-aware shortest paths. Link travel time follows the BPR function t = t0 × (1 + alpha × (v/c)^beta), with v/c capped at maxRatio. An assignment round processes origin cells a slice per tick (up to nodesPerTick settled road tiles, at least one origin) and finishes by blending the new flows into the saved flows (blend = share of the new round). Flows are in passenger car units (PCU) per hour; road capacities and speeds live in roads.json. Road class lane-closure capacity and the closure used for emergency repairs are in roads.json too.",
+  "cellSize": 8,
+  "assignIntervalMinutes": 15,
+  "assignOffset": 1,
+  "nodesPerTick": 8000,
+  "blend": 0.5,
+  "bpr": { "alpha": 0.15, "beta": 4, "maxRatio": 3 },
+  "deterrenceMinutes": 12,
+  "trips": {
+    "outboundPerResident": 1.0,
+    "visitsPerCommercialJob": 1.5,
+    "freightPerIndustrialJob": 0.3,
+    "freightPerCommercialJob": 0.05,
+    "farmTripsPerFarm": 8
+  },
+  "pcu": { "hgv": 2.5, "farm": 3 },
+  "curves": {
+    "outbound": [
+      0.3, 0.2, 0.1, 0.1, 0.2, 0.8, 3, 9, 12, 6, 4, 4, 4.5, 4, 3.5, 4, 4, 4.5, 4, 3, 2, 1.5, 1, 0.6
+    ],
+    "return": [
+      0.5, 0.3, 0.2, 0.1, 0.1, 0.2, 0.5, 1, 1.5, 2, 3, 3.5, 4.5, 4, 4, 6, 9, 12, 8, 5, 3.5, 2.5,
+      1.5, 1
+    ],
+    "freight": [
+      0.5, 0.4, 0.4, 0.5, 1, 2, 4, 6, 7, 7, 7, 7, 6, 6, 6, 6, 5, 4, 3, 2, 1.5, 1, 0.8, 0.6
+    ],
+    "farm": [0, 0, 0, 0, 0, 0.5, 2, 4, 6, 7, 7, 7, 6, 6, 6, 6, 5, 4, 3, 2, 0.5, 0, 0, 0]
+  },
+  "commute": { "goodMinutes": 15, "badMinutes": 40, "minFactor": 0.25 },
+  "crews": { "maxSlowdown": 4 },
+  "roadworks": {
+    "night": { "startHour": 20, "endHour": 6, "costFactor": 1.5, "durationFactor": 1.3 },
+    "laneClosure": { "durationFactor": 1.25 },
+    "combine": { "discount": 0.25, "resurfaceFactor": 0.5 },
+    "allowanceMinutes": 60
+  },
+  "cars": { "pcuPerCar": 120, "maxPerTile": 4, "maxCars": 5000 },
+  "overlay": {
+    "ramp": ["#ffffcc", "#fed976", "#fd8d3c", "#e31a1c", "#800026"],
+    "rampMaxRatio": 1.2,
+    "closed": "#2f2f2f",
+    "lane": "#9e9ac8"
+  }
+}

@@ -7,6 +7,7 @@ import { GAME_NAME } from '../config';
 import { GAME, Simulation } from '../sim';
 import type { Command, DensityId, SimEvent, WeatherEventId } from '../sim';
 import { GameRenderer } from '../render/renderer';
+import type { OverlayId } from '../render/renderer';
 import { downloadSave, pickSaveFileText } from '../platform/fileTransfer';
 import { createSaveFile, parseSaveFile, simulationFromSave } from '../platform/saveFormat';
 import { AUTOSAVE_SLOT, deleteSlot, listSlots, readSlot, writeSlot } from '../platform/saves';
@@ -72,6 +73,7 @@ export class Game {
       this.stepSim(dt);
       this.cameraInput.update(dt);
       const snap = this.sim.snapshot();
+      this.renderer.setTimeScale(GAME.speeds[this.scheduler.speedIndex] ?? 1);
       this.renderer.render(snap, dt);
       this.hud.update(snap, this.scheduler.speedIndex);
       requestAnimationFrame(frame);
@@ -170,6 +172,15 @@ export class Game {
           'warn',
         );
         break;
+      case 'permitClash':
+        this.toast(
+          `Street works clash at ${ev.x}, ${ev.y}: two permits overlap on the same street. Combine them in the incident inbox (\`).`,
+          'warn',
+        );
+        break;
+      case 'permitOverrun':
+        this.toast(`Roadworks at ${ev.x}, ${ev.y} are overrunning their permit.`, 'warn');
+        break;
       case 'irrigationLicenceReached':
         this.toast(
           `Farm irrigation licence used up (${ev.licenceMl} Ml today). Farms by the river switch to the mains or go without until midnight.`,
@@ -256,7 +267,7 @@ export class Game {
         this.hud.openHelp();
         break;
       case 'KeyO':
-        this.toggleWaterOverlay();
+        this.cycleOverlay();
         break;
       case 'Backquote':
         this.hud.inbox.toggle();
@@ -317,10 +328,13 @@ export class Game {
         this.renderer.setGridVisible(v);
       },
       helpClosed: () => this.updateSettings({ seenHelp: true }),
-      toggleWaterOverlay: () => this.toggleWaterOverlay(),
+      toggleOverlay: (id: 'water' | 'traffic') =>
+        this.setOverlay(this.renderer.overlay === id ? 'none' : id),
+      setWorksOptions: (patch) => this.tools.setWorksOptions(patch),
       dispatch: (cmd: Command) => {
         const r = this.sim.dispatch(cmd);
         if (!r.ok) toast(r.reason ?? 'That is not possible.', 'warn');
+        else if (r.note) toast(r.note, 'good');
       },
       focusTile: (tile: number) => {
         const w = this.sim.state.world.width;
@@ -335,10 +349,15 @@ export class Game {
     };
   }
 
-  private toggleWaterOverlay(): void {
-    const on = !this.renderer.waterOverlay;
-    this.renderer.setWaterOverlay(on);
-    this.hud.setWaterOverlay(on);
+  private setOverlay(id: OverlayId): void {
+    this.renderer.setOverlay(id);
+    this.hud.setOverlay(id);
+  }
+
+  /** O: water pressure → traffic → none. */
+  private cycleOverlay(): void {
+    const order: OverlayId[] = ['none', 'water', 'traffic'];
+    this.setOverlay(order[(order.indexOf(this.renderer.overlay) + 1) % order.length]!);
   }
 
   private toast(msg: string, kind: 'info' | 'good' | 'warn' | 'error' = 'info'): void {

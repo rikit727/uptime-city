@@ -13,11 +13,15 @@ import { PreviewLayer } from './layers/preview';
 import type { PreviewTiles } from './layers/preview';
 import { RoadLayer } from './layers/roads';
 import { TerrainLayer } from './layers/terrain';
+import { TrafficLayer } from './layers/traffic';
 import { WaterLayer } from './layers/water';
 import { ZoneLayer } from './layers/zones';
 import { Lighting } from './lighting';
 
 export type { PreviewTiles } from './layers/preview';
+
+/** Map overlays (one at a time; buildings and zoning dim while one is shown). */
+export type OverlayId = 'none' | 'water' | 'traffic';
 
 export class GameRenderer {
   readonly renderer: WebGLRenderer;
@@ -31,6 +35,7 @@ export class GameRenderer {
   private readonly power: PowerLayer;
   private readonly water: WaterLayer;
   private readonly crews: CrewLayer;
+  private readonly traffic: TrafficLayer;
   private readonly preview: PreviewLayer;
   private readonly raycaster = new Raycaster();
   private readonly groundPlane = new Plane(new Vector3(0, 1, 0), 0);
@@ -58,6 +63,7 @@ export class GameRenderer {
     this.power = new PowerLayer();
     this.water = new WaterLayer();
     this.crews = new CrewLayer();
+    this.traffic = new TrafficLayer(mapWidth);
     this.preview = new PreviewLayer(mapWidth, mapHeight);
     this.scene.add(
       this.terrain.group,
@@ -67,6 +73,7 @@ export class GameRenderer {
       this.power.group,
       this.water.group,
       this.crews.group,
+      this.traffic.group,
       this.preview.group,
     );
     this.resize();
@@ -88,15 +95,21 @@ export class GameRenderer {
     this.terrain.setGridVisible(v);
   }
 
-  /** Show or hide the water pressure overlay (dims buildings and zoning while shown). */
-  setWaterOverlay(on: boolean): void {
-    this.water.setVisible(on);
-    this.buildings.setDim(on);
-    this.zones.setDim(on);
+  /** Show one overlay (or none); buildings and zoning dim while one is shown. */
+  setOverlay(id: OverlayId): void {
+    this.water.setVisible(id === 'water');
+    this.traffic.setOverlay(id === 'traffic');
+    this.buildings.setDim(id !== 'none');
+    this.zones.setDim(id !== 'none');
   }
 
-  get waterOverlay(): boolean {
-    return this.water.visible;
+  get overlay(): OverlayId {
+    return this.water.visible ? 'water' : this.traffic.overlayVisible ? 'traffic' : 'none';
+  }
+
+  /** Sim speed multiplier (0 = paused) for cosmetic animation such as cars. */
+  setTimeScale(scale: number): void {
+    this.traffic.timeScale = scale;
   }
 
   setPreview(p: PreviewTiles | null): void {
@@ -131,6 +144,7 @@ export class GameRenderer {
     this.power.invalidate();
     this.water.invalidate();
     this.crews.invalidate();
+    this.traffic.invalidate();
     this.preview.show(null);
   }
 
@@ -144,6 +158,7 @@ export class GameRenderer {
     this.power.update(snap, night);
     this.water.update(snap, performance.now());
     this.crews.update(snap, performance.now());
+    this.traffic.update(snap, dt, performance.now());
     this.lighting.update(snap.minute, snap.weather.cloud);
     this.renderer.render(this.scene, this.rig.camera);
   }

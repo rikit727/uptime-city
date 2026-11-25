@@ -1,10 +1,13 @@
 {
+  "//": "Road classes. capacityVehPerHour is the two-way capacity of one tile (PCU/h) used by traffic; laneClosureCapacity is the share left when one lane is closed for works; repairClosure is how emergency repairs close the road (full or lane).",
   "bridgeCostMultiplier": 5,
   "demolishCostPerTile": 20,
   "classes": [
     {
       "id": "local",
       "code": 1,
+      "laneClosureCapacity": 0.35,
+      "repairClosure": "full",
       "name": "Local road",
       "lanes": 2,
       "capacityVehPerHour": 600,
@@ -15,6 +18,8 @@
     {
       "id": "avenue",
       "code": 2,
+      "laneClosureCapacity": 0.5,
+      "repairClosure": "lane",
       "name": "Avenue",
       "lanes": 4,
       "capacityVehPerHour": 1600,
@@ -25,6 +30,8 @@
     {
       "id": "highway",
       "code": 3,
+      "laneClosureCapacity": 0.67,
+      "repairClosure": "lane",
       "name": "Highway",
       "lanes": 6,
       "capacityVehPerHour": 4000,
