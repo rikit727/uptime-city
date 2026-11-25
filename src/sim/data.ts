@@ -4,17 +4,23 @@
  */
 import assetsJson from '../data/assets.json';
 import buildingsJson from '../data/buildings.json';
+import cityJson from '../data/city.json';
+import economyJson from '../data/economy.json';
 import gameJson from '../data/game.json';
 import growthJson from '../data/growth.json';
 import powerJson from '../data/power.json';
 import roadsJson from '../data/roads.json';
+import servicesJson from '../data/services.json';
 import trafficJson from '../data/traffic.json';
 import waterJson from '../data/water.json';
 import weatherJson from '../data/weather.json';
 import zonesJson from '../data/zones.json';
 import { SEASON_ORDER } from './types';
 import type {
+  CityEventType,
+  CoverageKind,
   CrewType,
+  Department,
   DensityId,
   DepotId,
   FacilityId,
@@ -26,6 +32,8 @@ import type {
   PowerFacilityId,
   RoadClassId,
   SeasonId,
+  ServiceFacilityId,
+  ServiceKind,
   TileAssetLayer,
   WaterFacilityId,
   WaterFacilityKind,
@@ -172,9 +180,16 @@ export interface GrownBuildingDef extends BuildingDefBase {
    */
   priority: number;
   heightJitter: number;
-  /** Farms: export income per day at full occupancy (used by the economy in M6). */
+  /** Farms: export income per day at full occupancy (paid by the economy). */
   exportPerDay?: number;
   fields?: FieldStyle;
+  /** Air and noise pollution emitted per building at full occupancy (index points). */
+  pollution?: Emissions;
+}
+
+export interface Emissions {
+  air: number;
+  noise: number;
 }
 
 /** A player-placed power facility (power.json). */
@@ -227,7 +242,48 @@ export interface DepotDef extends BuildingDefBase {
   cost: number;
 }
 
-export type AnyFacilityDef = FacilityDef | WaterFacilityDef | DepotDef;
+/** Landmark details: business rates, land value lift and the events it hosts. */
+export interface LandmarkSpec {
+  ratesPerDay: number;
+  /** Land value added at the landmark, falling to nothing at `landValueRadius` tiles. */
+  landValue: number;
+  landValueRadius: number;
+  /** Power and water multipliers while an event is on. */
+  eventPowerFactor: number;
+  eventWaterFactor: number;
+  /** Noise added at the venue while an event is on. */
+  eventNoise: number;
+  events: CityEventType[];
+}
+
+/** A public service or landmark (services.json). Draws power and water like a business. */
+export interface ServiceFacilityDef extends BuildingDefBase {
+  role: 'facility';
+  utility: 'service';
+  id: ServiceFacilityId;
+  kind: ServiceKind;
+  cost: number;
+  upkeepPerDay: number;
+  powerKw: number;
+  waterLpd: number;
+  /** Load-shedding priority (0 also makes it a priority water customer: hospitals). */
+  priority: number;
+  /** Demand curve used for its power and water use (and traffic: commercial = shoppers). */
+  zone: ZoneId;
+  /** Always 0 (nobody lives there); present so customer code can treat it like a grown building. */
+  residents: number;
+  /** Residents served, pupils, tonnes a day, landfill tonnes or event attendance (see services.json). */
+  capacity?: number;
+  /** Fire stations: crews (fire engines) based here. */
+  crewType?: CrewType;
+  crews?: number;
+  pollution?: Emissions;
+  landmark?: LandmarkSpec;
+}
+
+export type AnyFacilityDef = FacilityDef | WaterFacilityDef | DepotDef | ServiceFacilityDef;
+/** A building that draws power and water as a customer: grown buildings and services. */
+export type CustomerDef = GrownBuildingDef | ServiceFacilityDef;
 export type BuildingDef = GrownBuildingDef | AnyFacilityDef;
 
 export interface LineTypeDef {
@@ -401,7 +457,13 @@ export interface AssetsConfig {
   maintenanceThresholds: number[];
   resolvedKept: number;
   migrationCondition: number;
-  crews: { mobiliseMinutes: number; offRoadKmh: number; roadSearchRadius: number };
+  crews: {
+    mobiliseMinutes: number;
+    /** Crew types that mobilise faster (fire engines). */
+    mobiliseByType: Partial<Record<CrewType, number>>;
+    offRoadKmh: number;
+    roadSearchRadius: number;
+  };
   bottledWater: { cost: number };
   severity: { names: string[]; customerSteps: number[]; priorityCustomerBump: number };
   priorityNames: string[];
@@ -469,8 +531,16 @@ export const ROADS = {
 
 // ---- traffic and roadworks --------------------------------------------------------
 
-export type TripPurpose = 'outbound' | 'return' | 'freight' | 'farm';
-export const TRIP_PURPOSES: readonly TripPurpose[] = ['outbound', 'return', 'freight', 'farm'];
+/** Trip purposes; eventIn / eventOut are trips to and from events at landmarks. */
+export type TripPurpose = 'outbound' | 'return' | 'freight' | 'farm' | 'eventIn' | 'eventOut';
+export const TRIP_PURPOSES: readonly TripPurpose[] = [
+  'outbound',
+  'return',
+  'freight',
+  'farm',
+  'eventIn',
+  'eventOut',
+];
 
 export interface TrafficConfig {
   cellSize: number;
@@ -543,10 +613,152 @@ const zoneById = indexBy(ZONES.types, (z) => z.id);
 const zoneByCode = indexBy(ZONES.types, (z) => z.code);
 const densityById = indexBy(ZONES.densities, (d) => d.id);
 const densityByCode = indexBy(ZONES.densities, (d) => d.code);
+// ---- services, landmarks, events -------------------------------------------------
+
+export interface CityEventDef {
+  id: CityEventType;
+  name: string;
+  everyDays: number;
+  jitterDays: number;
+  startHour: number;
+  hours: number;
+  /** Attendance range as a share of the venue's capacity. */
+  attendance: [number, number];
+  carsPerAttendee: number;
+  arrivalHours: number;
+  departureHours: number;
+  levyPerAttendee: number;
+  policePer1000: number;
+  crowdRisk: number;
+}
+
+export interface ServicesConfig {
+  coverage: Record<CoverageKind, { goodMinutes: number; maxMinutes: number }>;
+  pupilsPerResident: number;
+  unpoweredServiceFactor: number;
+  waste: {
+    collectionHour: number;
+    tonnesPerResident: number;
+    tonnesPerJob: number;
+    recyclableShare: number;
+    litterTonnesPerAttendee: number;
+  };
+  fire: {
+    ignitionPerBuildingDay: number;
+    zoneRisk: Record<ZoneId, number>;
+    startIntensity: number;
+    growthPerMinute: number;
+    accelerationAt: number;
+    suppressionPerAppliance: number;
+    hydrantSearchTiles: number;
+    hydrantLps: number;
+    goodHydrantM: number;
+    tankShare: number;
+    /** [footprint area, appliances] pairs, ascending area. */
+    appliancesByArea: [number, number][];
+    damageOccupancy: number;
+    gutsCondition: number;
+    smokeAir: number;
+    targetResponseMinutes: number;
+  };
+  events: CityEventDef[];
+  eventMeasures: {
+    policing: { name: string; costPer1000: number; covers: number };
+    stewarding: { name: string; costPer1000: number; carReduction: number };
+    closeRoads: { name: string; cost: number; crowdRiskFactor: number };
+    cleanup: { name: string; costPer1000: number };
+  };
+  eventsKept: number;
+  scheduleAheadDays: number;
+  facilities: ServiceFacilityDef[];
+}
+
+const rawServices = servicesJson as unknown as Omit<ServicesConfig, 'facilities'> & {
+  facilities: Omit<ServiceFacilityDef, 'role' | 'utility' | 'residents'>[];
+};
+export const SERVICES: ServicesConfig = {
+  ...rawServices,
+  facilities: rawServices.facilities.map((f): ServiceFacilityDef => ({
+    ...f,
+    role: 'facility',
+    utility: 'service',
+    residents: 0,
+  })),
+};
+
+// ---- economy ---------------------------------------------------------------------
+
+export interface EconomyConfig {
+  daysPerMonth: number;
+  taxes: {
+    perResident: number;
+    perJob: Record<'commercial' | 'office' | 'industrial' | 'agricultural', number>;
+    landValueWeight: Record<ZoneId, number>;
+    rateLevels: number[];
+  };
+  tariffs: { electricityPerMWh: number; waterPerMl: number };
+  fuel: { gasPerMWh: number };
+  crewCostPerDay: Record<CrewType, number>;
+  budgetLevels: number[];
+  departments: Record<Department, { name: string; maintenancePerDay: number }>;
+  autoMaintenance: { hour: number; belowCondition: number };
+  underfundedDecayFactor: number;
+  /** Running cost per day of power and water facilities and depots, by kind. */
+  upkeepPerDay: Record<string, number>;
+  loans: { amounts: number[]; ratePerMonth: number; termMonths: number; maxDebt: number };
+  fines: { licenceBreach: number; spillPerMl: number; permitClash: number; permitOverrun: number };
+  historyMonths: number;
+  taxDemandEffect: number;
+}
+export const ECONOMY = economyJson as unknown as EconomyConfig;
+
+// ---- pollution, land value, happiness, complaints -----------------------------------
+
+export interface CityConfig {
+  pollution: {
+    cellSize: number;
+    spreadTiles: { air: number; noise: number };
+    traffic: { airPerPcu: number; noisePerPcu: number };
+    highwayNoise: number;
+    gasAirPerMW: number;
+    sewageAir: number;
+    thresholds: Record<'air' | 'noise', { quiet: number; bad: number }>;
+  };
+  landValue: {
+    base: number;
+    services: number;
+    riverBonus: number;
+    riverTiles: number;
+    airPenalty: number;
+    noisePenalty: number;
+    growthMin: number;
+    growthMax: number;
+  };
+  happiness: {
+    weights: Record<
+      'services' | 'utilities' | 'waste' | 'commute' | 'pollution' | 'taxes' | 'landValue',
+      number
+    >;
+    complaintPenalty: number;
+    maxComplaintPenalty: number;
+    demandEffect: number;
+  };
+  complaints: {
+    kept: number;
+    waterHours: number[];
+    powerHours: number[];
+    cooldownHours: Record<string, number>;
+    vcComplaint: number;
+  };
+  streets: { names: string[]; local: string[]; avenue: string[]; highway: string[] };
+}
+export const CITY = cityJson as unknown as CityConfig;
+
 const allFacilities: AnyFacilityDef[] = [
   ...POWER.facilities,
   ...WATER.facilities,
   ...ASSETS.depots,
+  ...SERVICES.facilities,
 ];
 const allBuildings: BuildingDef[] = [...BUILDINGS.types, ...allFacilities];
 const buildingByCode = indexBy(allBuildings, (b) => b.code);
@@ -584,10 +796,27 @@ export const buildingDef = (code: number): BuildingDef | undefined => buildingBy
 export function facilityDef(id: PowerFacilityId): FacilityDef;
 export function facilityDef(id: WaterFacilityId): WaterFacilityDef;
 export function facilityDef(id: DepotId): DepotDef;
+export function facilityDef(id: ServiceFacilityId): ServiceFacilityDef;
 export function facilityDef(id: FacilityId): AnyFacilityDef;
 export function facilityDef(id: FacilityId): AnyFacilityDef {
   return must(facilityById.get(id), `facility ${id}`);
 }
+const eventById = indexBy(SERVICES.events, (e) => e.id);
+export const cityEventDef = (id: CityEventType): CityEventDef =>
+  must(eventById.get(id), `event ${id}`);
+
+/** A building's definition if it is a public service or landmark. */
+export const serviceDefOf = (code: number): ServiceFacilityDef | undefined => {
+  const def = buildingByCode.get(code);
+  return def?.role === 'facility' && def.utility === 'service' ? def : undefined;
+};
+
+/** Customer definition (grown building or service facility) for a building code. */
+export const customerDefOf = (code: number): CustomerDef | undefined => {
+  const def = buildingByCode.get(code);
+  return def?.role === 'grown' || def?.utility === 'service' ? def : undefined;
+};
+
 export const mainType = (id: MainTypeId): MainTypeDef => must(mainById.get(id), `main ${id}`);
 export const mainTypeByCode = (code: number): MainTypeDef | undefined => mainByCode.get(code);
 export const lineType = (id: LineTypeId): LineTypeDef => must(lineById.get(id), `line ${id}`);

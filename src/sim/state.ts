@@ -7,11 +7,22 @@
  * It is never saved; `rebuildCache()` recreates it after load, so it must be a
  * pure function of the saved state.
  */
-import { GAME, TRAFFIC, TRIP_PURPOSES } from './data';
+import { CITY, GAME, TRAFFIC, TRIP_PURPOSES } from './data';
 import type { TripPurpose } from './data';
 import { generateTerrain } from './mapgen';
 import { Rng, seedState } from './rng';
-import type { AssetLayer, CrewType, IncidentKind, WeatherEventId, ZoneId } from './types';
+import type {
+  AssetLayer,
+  CityEventType,
+  CoverageKind,
+  CrewType,
+  Department,
+  EventMeasure,
+  IncidentKind,
+  WeatherEventId,
+  ZoneId,
+} from './types';
+import { COVERAGE_KINDS, DEPARTMENTS, TAX_ZONES } from './types';
 import { rebuildCache } from './cache';
 import { initWeather } from './weather';
 import { createWorld } from './world';
@@ -89,7 +100,8 @@ export type WorkOrderStatus = 'queued' | 'enRoute' | 'onSite';
 /** A job for a crew: a reactive repair or planned maintenance. Removed when done. */
 export interface WorkOrder {
   readonly id: number;
-  readonly type: 'repair' | 'maintenance';
+  /** Firefighting orders send one fire engine to a fire; fire.ts finishes them. */
+  readonly type: 'repair' | 'maintenance' | 'firefighting';
   readonly crew: CrewType;
   readonly asset: AssetRef;
   /** Site tile the crew drives to. */
@@ -296,6 +308,8 @@ export interface WeatherState {
 /** Game rules chosen at new game (sandbox settings; more arrive in M7). */
 export interface GameRules {
   weatherEvents: boolean;
+  /** Random building fires (on by default; scenarios and tests may turn them off). */
+  fires: boolean;
 }
 
 export interface PowerIslandStats {
@@ -418,6 +432,204 @@ export interface WaterStats {
   leakageLps: number;
 }
 
+// ---- services, fires, events, economy, city (milestone 6) -------------------------
+
+/** A building on fire. Fire engines are sent through firefighting work orders. */
+export interface Fire {
+  readonly id: number;
+  readonly building: number;
+  /** Road tile the engines park on (closed while they work), or the building's corner. */
+  readonly tile: number;
+  /** Main tile the engines draw from (-1 = none in reach: tank water only). */
+  readonly hydrant: number;
+  readonly startMinute: number;
+  /** Share of the building involved, 0..100. */
+  intensity: number;
+  peak: number;
+  readonly incidentId: number;
+  /** Minute the first engine got there (-1 before). */
+  firstArrival: number;
+}
+
+export type CityEventStatus = 'booked' | 'live' | 'done';
+
+/** An event at a landmark (match, concert, conference, shopping weekend, graduation). */
+export interface CityEvent {
+  readonly id: number;
+  readonly type: CityEventType;
+  /** Venue building id. */
+  readonly venue: number;
+  /** Doors open and the event ends (minutes). Crowds arrive before and leave after. */
+  readonly start: number;
+  readonly end: number;
+  readonly attendance: number;
+  /** Preparations booked by the player (ascending order of EVENT_MEASURES). */
+  measures: EventMeasure[];
+  status: CityEventStatus;
+  /** Filled in when it ends: congestion index at the start, crowd trouble, litter left, levy paid. */
+  congestion: number;
+  trouble: boolean;
+  litter: boolean;
+  revenue: number;
+}
+
+/** A complaint from residents, generated from real sim events. Newest last. */
+export interface Complaint {
+  readonly id: number;
+  readonly minute: number;
+  /** Category for filtering and cooldowns (water, power, bins, traffic, ...). */
+  readonly kind: string;
+  readonly text: string;
+  readonly tile: number;
+  /** De-duplication key: the same key is not repeated within its cooldown. */
+  readonly key: string;
+}
+
+export type IncomeLine =
+  'councilTax' | 'businessRates' | 'farmExports' | 'electricity' | 'water' | 'events';
+export type ExpenseLine =
+  | 'capital'
+  | 'maintenance'
+  | 'repairs'
+  | 'crews'
+  | 'upkeep'
+  | 'fuel'
+  | 'services'
+  | 'fines'
+  | 'interest';
+export const INCOME_LINES: readonly IncomeLine[] = [
+  'councilTax',
+  'businessRates',
+  'farmExports',
+  'electricity',
+  'water',
+  'events',
+];
+export const EXPENSE_LINES: readonly ExpenseLine[] = [
+  'capital',
+  'maintenance',
+  'repairs',
+  'crews',
+  'upkeep',
+  'fuel',
+  'services',
+  'fines',
+  'interest',
+];
+
+/** One month's accounts: income and expenses by line, plus borrowing and loan principal repaid. */
+export interface Ledger {
+  income: Record<IncomeLine, number>;
+  expenses: Record<ExpenseLine, number>;
+  borrowed: number;
+  repaid: number;
+}
+
+export interface MonthSummary {
+  /** Month number (1 = the first 30 days). */
+  month: number;
+  income: number;
+  expenses: number;
+  cash: number;
+}
+
+export interface Loan {
+  readonly id: number;
+  readonly principal: number;
+  balance: number;
+  readonly payment: number;
+  monthsLeft: number;
+}
+
+/** Saved economy: budgets, tax rates, this and last month's accounts, meters, loans. */
+export interface EconomyState {
+  budgets: Record<Department, number>;
+  taxRates: Record<ZoneId, number>;
+  month: Ledger;
+  lastMonth: Ledger | null;
+  history: MonthSummary[];
+  /** Energy and water sold since the last hourly settlement (and gas burnt). */
+  meter: { electricityMWh: number; gasMWh: number; waterMl: number };
+  loans: Loan[];
+  nextLoanId: number;
+}
+
+export interface FireKpis {
+  fires: number;
+  extinguished: number;
+  destroyed: number;
+  /** Sum of minutes from ignition to the first engine on site, and how many responses. */
+  responseMinutes: number;
+  responses: number;
+}
+
+export interface WasteFigures {
+  generatedT: number;
+  collectedT: number;
+  recycledT: number;
+  landfilledT: number;
+  /** Buildings whose bins were missed at the last collection. */
+  missed: number;
+}
+
+/** Saved service figures, recomputed hourly (ratios) or daily (waste). */
+export interface ServicesState {
+  /** [facility id, share of its catchment it can serve 0..1], ascending id (police, health, school, waste). */
+  ratios: [number, number][];
+  /** Share of collected waste that could be tipped (recycling + landfill space), 0..1. */
+  tipping: number;
+  /** [landfill id, tonnes tipped so far], ascending id. */
+  landfill: [number, number][];
+  waste: WasteFigures;
+  fireKpi: FireKpis;
+  nextFireId: number;
+  nextEventId: number;
+  nextComplaintId: number;
+}
+
+export type HappinessFactor =
+  'services' | 'utilities' | 'waste' | 'commute' | 'pollution' | 'taxes' | 'landValue';
+
+/**
+ * City happiness (residents-weighted) from the last residents round, and the
+ * round in progress: each hour every building is visited once, a slice per
+ * tick in id order, to collect its taxes and score its residents' happiness.
+ */
+export interface HappinessState {
+  /** 0..100. */
+  city: number;
+  /** Average score of each factor, 0..1. */
+  factors: Record<HappinessFactor, number>;
+  /** Points lost to recent complaints. */
+  complaintPenalty: number;
+  /** Id of the last building visited this round; -1 between rounds. */
+  cursor: number;
+  /** Partial sums of the round in progress: residents, residents × score, residents × factor. */
+  sumWeight: number;
+  sumScore: number;
+  sumFactors: Record<HappinessFactor, number>;
+}
+
+/** Air and noise pollution on the coarse pollution grid (index points × 10), recomputed hourly. */
+export interface PollutionState {
+  air: Uint16Array;
+  noise: Uint16Array;
+}
+
+/** Derived service coverage (never saved): free-flow minutes from the nearest facility per road tile. */
+export interface ServicesCache {
+  minutes: Record<CoverageKind, Float32Array>;
+  nearest: Record<CoverageKind, Int32Array>;
+  /** Facility id -> served share, from `services.ratios`. */
+  ratio: Map<number, number>;
+  /** Landmark buildings (for land value), ascending id. */
+  landmarks: Building[];
+  /** Land value parts that change only with the layout: river and landmarks, per tile. */
+  landStatic: Float32Array;
+  /** Public services score per road tile (time quality × served share, no outages), 0..1. */
+  roadServices: Float32Array;
+}
+
 export interface SimCache {
   /** Tile -> building id (0 = none). */
   buildingAt: Int32Array;
@@ -441,6 +653,7 @@ export interface SimCache {
   waterRound: WaterNetworkResult[];
   faults: FaultCache;
   traffic: TrafficCache;
+  services: ServicesCache;
 }
 
 /** Network-level figures from one solve (for the UI). */
@@ -486,6 +699,16 @@ export interface SimState {
   traffic: TrafficState;
   /** Street works permits, ascending id. */
   permits: Permit[];
+  economy: EconomyState;
+  services: ServicesState;
+  /** Fires burning now, ascending id. */
+  fires: Fire[];
+  /** Booked, live and recent events at landmarks, ascending id. */
+  events: CityEvent[];
+  /** Recent complaints, oldest first. */
+  complaints: Complaint[];
+  happiness: HappinessState;
+  pollution: PollutionState;
   /** Derived data; never saved. */
   cache: SimCache;
 }
@@ -495,6 +718,7 @@ export interface NewGameOptions {
   startingCash?: number;
   mapSize?: number;
   weatherEvents?: boolean;
+  fires?: boolean;
 }
 
 export const emptyDemand = (): Record<ZoneId, number> => ({
@@ -615,6 +839,101 @@ export function initialTrafficState(world: { width: number; height: number }): T
   };
 }
 
+const perKind = <T>(make: () => T): Record<CoverageKind, T> =>
+  Object.fromEntries(COVERAGE_KINDS.map((k) => [k, make()])) as Record<CoverageKind, T>;
+
+export const emptyLedger = (): Ledger => ({
+  income: {
+    councilTax: 0,
+    businessRates: 0,
+    farmExports: 0,
+    electricity: 0,
+    water: 0,
+    events: 0,
+  },
+  expenses: {
+    capital: 0,
+    maintenance: 0,
+    repairs: 0,
+    crews: 0,
+    upkeep: 0,
+    fuel: 0,
+    services: 0,
+    fines: 0,
+    interest: 0,
+  },
+  borrowed: 0,
+  repaid: 0,
+});
+
+export const initialEconomyState = (): EconomyState => ({
+  budgets: Object.fromEntries(DEPARTMENTS.map((d) => [d, 1])) as Record<Department, number>,
+  taxRates: Object.fromEntries(TAX_ZONES.map((z) => [z, 1])) as Record<ZoneId, number>,
+  month: emptyLedger(),
+  lastMonth: null,
+  history: [],
+  meter: { electricityMWh: 0, gasMWh: 0, waterMl: 0 },
+  loans: [],
+  nextLoanId: 1,
+});
+
+export const emptyFireKpis = (): FireKpis => ({
+  fires: 0,
+  extinguished: 0,
+  destroyed: 0,
+  responseMinutes: 0,
+  responses: 0,
+});
+
+export const emptyWaste = (): WasteFigures => ({
+  generatedT: 0,
+  collectedT: 0,
+  recycledT: 0,
+  landfilledT: 0,
+  missed: 0,
+});
+
+export const initialServicesState = (): ServicesState => ({
+  ratios: [],
+  tipping: 1,
+  landfill: [],
+  waste: emptyWaste(),
+  fireKpi: emptyFireKpis(),
+  nextFireId: 1,
+  nextEventId: 1,
+  nextComplaintId: 1,
+});
+
+const zeroFactors = (): Record<HappinessFactor, number> => ({
+  services: 0,
+  utilities: 0,
+  waste: 0,
+  commute: 0,
+  pollution: 0,
+  taxes: 0,
+  landValue: 0,
+});
+
+export const initialHappiness = (): HappinessState => ({
+  city: 0,
+  factors: zeroFactors(),
+  complaintPenalty: 0,
+  cursor: -1,
+  sumWeight: 0,
+  sumScore: 0,
+  sumFactors: zeroFactors(),
+});
+
+/** Pollution grid cells along each side of the map. */
+export const pollutionCellsAcross = (size: number, cellSize: number): number =>
+  Math.ceil(size / cellSize);
+
+export function initialPollution(world: { width: number; height: number }, cellSize: number) {
+  const cells =
+    pollutionCellsAcross(world.width, cellSize) * pollutionCellsAcross(world.height, cellSize);
+  return { air: new Uint16Array(cells), noise: new Uint16Array(cells) };
+}
+
 /** An empty cache sized for the world; call rebuildCache() to fill it. */
 export function emptyCache(world: WorldState): SimCache {
   const n = world.width * world.height;
@@ -660,6 +979,14 @@ export function emptyCache(world: WorldState): SimCache {
       clashes: new Map(),
       access: new Map(),
     },
+    services: {
+      minutes: perKind(() => new Float32Array(n).fill(Infinity)),
+      nearest: perKind(() => new Int32Array(n)),
+      ratio: new Map(),
+      landmarks: [],
+      landStatic: new Float32Array(n),
+      roadServices: new Float32Array(n),
+    },
   };
 }
 
@@ -692,7 +1019,7 @@ export function createInitialState(opts: NewGameOptions): SimState {
     minute: GAME.startMinute,
     rng: new Rng(seedState(opts.seed, SIM_STREAM)),
     cash: opts.startingCash ?? GAME.startingCash,
-    rules: { weatherEvents: opts.weatherEvents ?? true },
+    rules: { weatherEvents: opts.weatherEvents ?? true, fires: opts.fires ?? true },
     world,
     buildings: [],
     nextBuildingId: 1,
@@ -708,6 +1035,13 @@ export function createInitialState(opts: NewGameOptions): SimState {
     crews: [],
     traffic: initialTrafficState(world),
     permits: [],
+    economy: initialEconomyState(),
+    services: initialServicesState(),
+    fires: [],
+    events: [],
+    complaints: [],
+    happiness: initialHappiness(),
+    pollution: initialPollution(world, CITY.pollution.cellSize),
     cache: emptyCache(world),
   };
   initWeather(state);

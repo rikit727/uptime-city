@@ -28,9 +28,12 @@
  * save loaded mid-round continues identically.
  */
 import { FAULT } from './assets';
-import { ASSETS, GAME, WATER, buildingDef, mainTypeByCode } from './data';
-import type { GrownBuildingDef, WaterFacilityDef } from './data';
-import { grownDefOf, residentsOf } from './buildings';
+import { ASSETS, ECONOMY, GAME, WATER, buildingDef, customerDefOf, mainTypeByCode } from './data';
+import type { CustomerDef, GrownBuildingDef, WaterFacilityDef } from './data';
+import { residentsOf } from './buildings';
+import { eventLoadFactor } from './cityEvents';
+import { firefightingDraws } from './fire';
+import { spend } from './ledger';
 import type { SimEvent } from './events';
 import type {
   Building,
@@ -61,7 +64,7 @@ export const waterDefOf = (b: Building): WaterFacilityDef | undefined => {
 export const running = (state: SimState, b: Building, def: WaterFacilityDef): boolean =>
   !state.cache.faults.offline.has(b.id) && (def.powerKw <= 0 || b.unpoweredMinutes === 0);
 
-export const isFarm = (def: GrownBuildingDef): boolean => def.zone === 'agricultural';
+export const isFarm = (def: CustomerDef): boolean => def.zone === 'agricultural';
 
 // ---- layout ---------------------------------------------------------------
 
@@ -192,13 +195,13 @@ function ringFind(
 }
 
 /** The main tile that serves a building (its connection), or -1 if none is close enough. */
-export function serviceTile(w: WorldState, b: Building, def: GrownBuildingDef): number {
+export function serviceTile(w: WorldState, b: Building, def: CustomerDef): number {
   const [fw, fd] = def.footprint;
   return ringFind(w, b.x, b.y, fw, fd, (t) => w.water[t] !== 0);
 }
 
 /** The road tile whose sewer a building drains into, or -1. */
-export function sewerTile(w: WorldState, b: Building, def: GrownBuildingDef): number {
+export function sewerTile(w: WorldState, b: Building, def: CustomerDef): number {
   const [fw, fd] = def.footprint;
   return ringFind(w, b.x, b.y, fw, fd, (t) => w.road[t] !== 0);
 }
@@ -277,13 +280,13 @@ const activity = (b: Building): number =>
   WATER.vacantUseFraction + (1 - WATER.vacantUseFraction) * b.occupancy;
 
 /** Household, business or process water use now, l/s (irrigation excluded). */
-export function useLps(b: Building, def: GrownBuildingDef, f: WaterFactors): number {
+export function useLps(b: Building, def: CustomerDef, f: WaterFactors): number {
   return (def.waterLpd / 86400) * curve(def.zone, f.hour) * f.temperature * activity(b);
 }
 
 /** Farm irrigation or livestock watering now, l/s. */
-export function irrigationLps(b: Building, def: GrownBuildingDef, f: WaterFactors): number {
-  if (!def.irrigationLpd) return 0;
+export function irrigationLps(b: Building, def: CustomerDef, f: WaterFactors): number {
+  if (def.role !== 'grown' || !def.irrigationLpd) return 0;
   const style = def.fields ?? 'arable';
   return (
     (def.irrigationLpd / 86400) * curve('agricultural', f.hour) * f.irrigation[style] * activity(b)
@@ -291,8 +294,8 @@ export function irrigationLps(b: Building, def: GrownBuildingDef, f: WaterFactor
 }
 
 /** Does this farm water its fields from the river right now (rather than the mains)? */
-export function irrigatesFromRiver(state: SimState, b: Building, def: GrownBuildingDef): boolean {
-  if (!def.irrigationLpd || state.water.irrigationCapped) return false;
+export function irrigatesFromRiver(state: SimState, b: Building, def: CustomerDef): boolean {
+  if (def.role !== 'grown' || !def.irrigationLpd || state.water.irrigationCapped) return false;
   return nearRiver(state.world, b.x, b.y, def.footprint[0], def.footprint[1]);
 }
 
@@ -533,12 +536,12 @@ export function solveNetwork(state: SimState, net: WaterNetwork): WaterNetworkRe
   const customers: { b: Building; tile: number }[] = [];
   let D = 0;
   for (const b of state.buildings) {
-    const def = grownDefOf(b);
+    const def = customerDefOf(b.code);
     if (!def) continue;
     const tile = serviceTile(w, b, def);
     if (tile < 0 || L.netAt[tile] !== net.id) continue;
-    let q = useLps(b, def, f);
-    if (def.irrigationLpd && !irrigatesFromRiver(state, b, def)) q += irrigationLps(b, def, f);
+    let q = useLps(b, def, f) * eventLoadFactor(state, b).water;
+    if (!irrigatesFromRiver(state, b, def)) q += irrigationLps(b, def, f);
     demand[tile] = demand[tile]! + q;
     D += q;
     customers.push({ b, tile });
@@ -554,6 +557,12 @@ export function solveNetwork(state: SimState, net: WaterNetwork): WaterNetworkRe
     leak += q;
   }
   D += leak;
+  // Fire engines draw from hydrants on the mains.
+  for (const [t, q] of firefightingDraws(state)) {
+    if (L.netAt[t] !== net.id) continue;
+    demand[t] = demand[t]! + q;
+    D += q;
+  }
 
   // Production: treatment output is limited by the intakes feeding it.
   let intakeCap = 0;
@@ -702,6 +711,7 @@ export function finishRound(
 
   const stats = emptyWaterStats();
   for (const r of results) {
+    state.economy.meter.waterMl += ((r.suppliedLps - r.leakLps) * dt) / 1e6;
     stats.demandLps += r.demandLps;
     stats.suppliedLps += r.suppliedLps;
     stats.productionLps += r.productionLps;
@@ -711,7 +721,7 @@ export function finishRound(
   const sewerRoof = new Float64Array(L.sewers.length + 1);
   let riverDraw = 0;
   for (const b of state.buildings) {
-    const def = grownDefOf(b);
+    const def = customerDefOf(b.code);
     if (!def) continue;
     const tile = serviceTile(w, b, def);
     const onMains = tile >= 0 && solvable.has(L.netAt[tile]!);
@@ -787,7 +797,9 @@ export function finishRound(
       ws.spillMl = 0;
       emit({ type: 'sewerOverflow', spillLps: stats.spillLps });
     }
-    ws.spillMl += (stats.spillLps * dt) / 1e6;
+    const vol = (stats.spillLps * dt) / 1e6;
+    ws.spillMl += vol;
+    spend(state, 'fines', vol * ECONOMY.fines.spillPerMl);
   } else if (ws.overflowing) {
     emit({ type: 'sewerOverflowEnded', spilledMl: ws.spillMl });
   }
@@ -806,6 +818,7 @@ export function finishRound(
   stats.farmLicenceMlPerDay = farmLicence;
   if (!ws.licenceBreached && ws.abstractedTodayMl > stats.licenceMlPerDay + 1e-9) {
     ws.licenceBreached = true;
+    spend(state, 'fines', ECONOMY.fines.licenceBreach);
     emit({
       type: 'abstractionLicenceBreached',
       usedMl: ws.abstractedTodayMl,

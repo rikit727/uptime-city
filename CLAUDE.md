@@ -56,11 +56,17 @@ Before committing: `npm run lint && npm test && npm run build`.
   call `rebuildWater()`; commands that change roads also call `rebuildTraffic()`
   (segments, travel times, clashes); anything that opens, closes or moves incidents
   and work orders on site calls `rebuildFaults()` (which refreshes travel times);
+  commands that change roads or service facilities call `rebuildServices()`;
   use `addBuilding()` / `removeBuildings()` so the tile index stays in step.
 - **Sliced work:** a system that spreads work across ticks must save everything a
   later slice reads (cursor, inputs fixed at the round's start, partial results),
   as `water.cursor` and `traffic.table` / `traffic.pending` do, so a save made
   mid-round continues identically.
+- **Money:** every cash change outside a command's plan cost goes through
+  `ledger.ts` (`spend(state, line, £)` / `earn(...)`) so it lands in the month's
+  accounts. Command costs are booked by `executeCommand` (`LEDGER_LINE`).
+- **UI queries:** the UI reads city figures through `snapshot.city` (`cityView.ts`),
+  never through `SimState`. Add a function there rather than exposing state.
 - **Imports:** in `src/` outside the sim, import sim things from `src/sim` (the index),
   not deep paths (tests may import deep paths). Use `import type` for types (lint enforces).
 - **Style:** Prettier (single quotes, 100 cols). Strict TS with
@@ -126,7 +132,8 @@ entry with:
   0 also makes it a priority water customer), `heightJitter`. Farms also take
   `fields` (`arable` | `pasture` | `glasshouse`, coloured by season from
   `fieldColours`), `irrigationLpd` (irrigation or livestock water per day) and
-  `exportPerDay`.
+  `exportPerDay`. Polluters take `pollution` (`air`, `noise` index points at full
+  occupancy).
 - `parts`: the model, in tile units relative to the footprint's top-left
   corner. Each part has `shape` (`box`, `gable`, `cylinder`, `tunnel`,
   `rotor`), centre `x`/`z`, optional base `y`, size `w`/`d`/`h`, `colour` (one
@@ -205,6 +212,36 @@ allowance), cosmetic car density and the overlay ramp. A new trip purpose needs
 the id in `TRIP_PURPOSES` (`data.ts`), a curve, and its production and attraction
 in `buildCellTable` (`traffic.ts`).
 
+### A public service or landmark
+
+Services and landmarks are data in `src/data/services.json` (`facilities`), codes
+500+: `id`, `code`, `name`, `kind` (`fire`, `police`, `health`, `school`, `waste`,
+`recycling`, `landfill`, `landmark`), `footprint`, `cost`, `upkeepPerDay`, `jobs`,
+`powerKw`, `waterLpd`, `priority` (0 = priority customer), `zone` (demand curve;
+`commercial` also makes its jobs attract shoppers), `parts`, and as needed
+`capacity` (see the file's comment), `crewType`/`crews` (fire stations),
+`pollution` (`air`, `noise`) and `landmark` (`ratesPerDay`, `landValue`,
+`landValueRadius`, `eventPowerFactor`, `eventWaterFactor`, `eventNoise`, `events`).
+Add the id to `ServiceFacilityId` in `src/sim/types.ts` and a tool in
+`src/ui/tools.ts`. A new coverage `kind` also needs `COVERAGE_KINDS`, a
+`coverage` entry and handling in `updateRatios` (`services.ts`).
+
+### An event type
+
+Add an entry to `services.json` `events` (`id`, `name`, `everyDays`, `jitterDays`,
+`startHour`, `hours`, `attendance` range as a share of capacity,
+`carsPerAttendee`, `arrivalHours`, `departureHours`, `levyPerAttendee`,
+`policePer1000`, `crowdRisk`), the id to `CityEventType` (`types.ts`) and to
+`EVENT_TYPES` in `serialize.ts`, and list it in a landmark's `landmark.events`.
+
+### Economy, pollution, happiness tuning
+
+Taxes, tariffs, fuel, wages, upkeep by facility kind, budget and tax levels,
+automatic maintenance, loans and fines are in `src/data/economy.json`. Pollution
+(grid, spread, sources, thresholds), land value, happiness weights and
+complaints (thresholds, cooldowns, street names) are in `src/data/city.json`.
+Building emissions are `pollution` on building types in `buildings.json`.
+
 ### A scenario (from milestone 7)
 
 Not implemented yet. Planned: one JSON file per scenario in
@@ -229,7 +266,14 @@ section in milestone 7.
   trip table, figures, roadworks KPIs), `.state.permits`,
   `.state.cache.traffic` (travel times, capacities, segments, clashes). O cycles
   the water and traffic overlays.
+- City: `.state.economy` (budgets, tax rates, `month` ledger, loans),
+  `.state.services` (served shares, waste, fire KPIs), `.state.fires`,
+  `.state.events`, `.state.complaints`, `.state.happiness`, and
+  `.snapshot().city.serviceLevel(building, 'fire')` etc. Shift+B opens the budget,
+  Shift+N the city panel (happiness, events, complaints).
 - Tests on a fixed map: `tests/sim/helpers.ts` has `poweredTown()` (which adds
   `waterSupply()` unless told not to) and `riverWater()`; on generated maps use
   `waterSupplyCommands()`. To test a failure, call `openIncident()` directly
   rather than relying on the failure roll; `visitTile()` runs one day's decay.
+  Set `state.rules.fires = false` when a test counts buildings; start a fire with
+  `startFire()` (`fire.ts`).

@@ -3,7 +3,26 @@ export { Simulation, replay } from './simulation';
 export type { LoggedCommand, Revisions, SimSnapshot } from './simulation';
 export type { Command, CommandPlan, CommandResult, CommandType, Layer } from './commands';
 export type { SimEvent } from './events';
+export type { CityView } from './cityView';
+export type { HappinessScores } from './happiness';
+export type { PollutionKind } from './pollution';
+export { EXPENSE_LINES, INCOME_LINES } from './state';
 export type {
+  CityEvent,
+  CityEventStatus,
+  Complaint,
+  EconomyState,
+  ExpenseLine,
+  Fire,
+  FireKpis,
+  HappinessFactor,
+  HappinessState,
+  IncomeLine,
+  Ledger,
+  Loan,
+  MonthSummary,
+  ServicesState,
+  WasteFigures,
   AssetKpis,
   AssetRef,
   AssetsState,
@@ -53,6 +72,10 @@ export {
 } from './assets';
 export { isOpen, isWaterIncident, mttrMinutes, severityName } from './incidents';
 export { crewPosition, depotDefOf } from './crews';
+export { crewSpecOf, timeQuality } from './services';
+export { crowdWindow, isOn } from './cityEvents';
+export { ledgerExpenses, ledgerIncome } from './economy';
+export { pollutionShare } from './pollution';
 export { bprFactor, cellOfTile, commuteFactor, freeFlowSeconds, vcRatio } from './traffic';
 export { durationFactor, nightStart, permitSegments, slotLabel } from './roadworks';
 export * from './data';

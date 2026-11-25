@@ -2,7 +2,8 @@
 
 ## Cut from v1
 
-Nothing has been cut so far. If cuts are needed, the spec's order is: events
+Nothing has been cut so far (milestone 6 shipped the events calendar, all five
+landmarks, noise pollution and glasshouses). If cuts are needed, the spec's order is: events
 calendar, then landmarks other than the stadium and shopping centre, then
 noise pollution, then glasshouses, then the 4th scenario. Record each cut here
 with the milestone and reason.
@@ -41,3 +42,12 @@ with the milestone and reason.
   20:00), closures for the whole permit slot with signed diversions, fines for
   permit overruns and clashes (with the M6 economy), and coordinating utilities'
   forward works programmes.
+- Services: coverage by congested travel time; patients, pupils and calls
+  allocated across facilities by preference rather than nearest-only catchments;
+  waste trucks on the roads; fire spreading between buildings, smoke plumes
+  drifting with the wind, power isolation and evacuation (some for the M7
+  commercial fire scenario).
+- Economy: adjustable utility tariffs, bonds, credit rating, budget overspend
+  rules; land value that remembers (property prices lagging changes).
+- Events: player-scheduled events and diversions signed along chosen routes;
+  public transport shuttles once public transport exists.

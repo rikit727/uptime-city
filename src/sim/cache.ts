@@ -7,6 +7,7 @@ import { rebuildBuildingIndex } from './buildings';
 import { rebuildEstates } from './estates';
 import { rebuildFaults } from './incidents';
 import { rebuildNetwork } from './power';
+import { rebuildServices } from './services';
 import { rebuildTraffic } from './traffic';
 import type { SimState } from './state';
 import { rebuildWater } from './water';
@@ -18,4 +19,5 @@ export function rebuildCache(state: SimState): void {
   rebuildNetwork(state);
   rebuildWater(state);
   rebuildTraffic(state);
+  rebuildServices(state);
 }

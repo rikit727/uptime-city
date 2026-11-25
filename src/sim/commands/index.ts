@@ -3,7 +3,8 @@
  * `planX` (pure, no mutation) and `applyX` (mutates using the plan), and
  * register both here.
  */
-import type { SimState } from '../state';
+import { bookSpend } from '../ledger';
+import type { ExpenseLine, SimState } from '../state';
 import {
   applyAssignCrew,
   applyCancelOrder,
@@ -19,6 +20,18 @@ import {
   planSetOrderPriority,
 } from './assets';
 import { applyBulldoze, planBulldoze } from './bulldoze';
+import {
+  applyPrepareEvent,
+  applyRepayLoan,
+  applySetBudget,
+  applySetTaxRate,
+  applyTakeLoan,
+  planPrepareEvent,
+  planRepayLoan,
+  planSetBudget,
+  planSetTaxRate,
+  planTakeLoan,
+} from './economy';
 import { rejected } from './common';
 import { applyPlaceFacility, planPlaceFacility } from './facilities';
 import { applyBuildLine, planBuildLine } from './power';
@@ -49,6 +62,11 @@ const handlers: HandlerMap = {
   cancelOrder: { plan: planCancelOrder, apply: applyCancelOrder },
   sendBottledWater: { plan: planSendBottledWater, apply: applySendBottledWater },
   combinePermits: { plan: planCombinePermits, apply: applyCombinePermits },
+  setBudget: { plan: planSetBudget, apply: applySetBudget },
+  setTaxRate: { plan: planSetTaxRate, apply: applySetTaxRate },
+  takeLoan: { plan: planTakeLoan, apply: applyTakeLoan },
+  repayLoan: { plan: planRepayLoan, apply: applyRepayLoan },
+  prepareEvent: { plan: planPrepareEvent, apply: applyPrepareEvent },
 };
 
 function handlerFor(cmd: Command): Handler<Command> | undefined {
@@ -69,5 +87,14 @@ export function executeCommand(state: SimState, cmd: Command): CommandPlan {
   if (!plan.ok) return plan;
   h.apply(state, cmd, plan);
   state.cash -= plan.cost;
+  bookSpend(state, LEDGER_LINE[cmd.type] ?? 'capital', plan.cost);
   return plan;
 }
+
+/** Which line of the accounts a command's cost goes on (default: capital works). */
+const LEDGER_LINE: Partial<Record<Command['type'], ExpenseLine>> = {
+  raiseMaintenance: 'maintenance',
+  combinePermits: 'maintenance',
+  sendBottledWater: 'services',
+  prepareEvent: 'services',
+};

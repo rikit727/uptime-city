@@ -1,3 +1,4 @@
+import { rebuildServices } from '../services';
 import { removeBuildings } from '../buildings';
 import { ROADS, mainType, roadClass } from '../data';
 import { rebuildEstates } from '../estates';
@@ -86,4 +87,5 @@ export function applyBuildRoad(state: SimState, cmd: BuildRoadCommand, plan: Com
   if (rezoned) rebuildEstates(state);
   rebuildWater(state);
   rebuildTraffic(state);
+  rebuildServices(state);
 }

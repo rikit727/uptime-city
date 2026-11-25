@@ -11,10 +11,12 @@
  * edge and a water main with good pressure beside it (farms may use the river
  * instead). Occupancy then grows hourly with demand while powered and supplied
  * with water, and falls after a long power or water outage. Long commutes from
- * the tile's traffic cell (traffic.ts) slow growth. Land value and services
- * join the growth test in M6 (see ARCHITECTURE.md decision log).
+ * the tile's traffic cell (traffic.ts) slow growth; homes, shops and offices
+ * grow faster on valuable land (services, landmarks, the river, little
+ * pollution: pollution.ts). Demand is damped by taxes and unhappiness.
  */
-import { GROWTH, WATER, zoneTypeByCode, grownTypesFor } from './data';
+import { CITY, ECONOMY, GROWTH, WATER, zoneTypeByCode, grownTypesFor } from './data';
+import { landValueGrowth, landValueOfTile } from './pollution';
 import type { GrownBuildingDef } from './data';
 import { addBuilding, grownDefOf, jobsOf, residentsOf } from './buildings';
 import { isEnergised } from './power';
@@ -61,7 +63,7 @@ export function computeDemand(state: SimState): Record<ZoneId, number> {
   const ratio = (target: number, have: number): number =>
     clamp((target - have) / Math.max(target, d.minScale), -1, 1);
   const jobsAvailable = t.jobs + d.bootstrapJobs;
-  return {
+  const raw: Record<ZoneId, number> = {
     residential: ratio(jobsAvailable, R * d.workforcePerResident),
     commercial: ratio(
       d.baseCommercialJobs + R * d.commercialJobsPerResident,
@@ -77,6 +79,17 @@ export function computeDemand(state: SimState): Record<ZoneId, number> {
       t.jobsByZone.agricultural,
     ),
   };
+  // Positive demand is damped by high taxes (business zones) and low happiness (homes).
+  const out = { ...raw };
+  for (const z of Object.keys(raw) as ZoneId[]) {
+    if (raw[z] <= 0) continue;
+    let f = 1;
+    if (z === 'residential') {
+      if (R > 0) f = 1 + CITY.happiness.demandEffect * (state.happiness.city / 100 - 0.5) * 2;
+    } else f = 1 - ECONOMY.taxDemandEffect * (state.economy.taxRates[z] - 1);
+    out[z] = clamp(raw[z] * Math.max(0, f), -1, 1);
+  }
+  return out;
 }
 
 /** Can `def` be built with its top-left corner at (x, y)? */
@@ -124,7 +137,12 @@ export function growSlice(state: SimState, count = GROWTH.scanTilesPerTick): num
     const demand = state.demand[zone.id];
     if (demand <= 0 || !isEnergised(state, t)) continue;
     const commute = zone.id === 'agricultural' ? 1 : commuteFactor(state, t);
-    if (!state.rng.chance(GROWTH.spawnChance * demand * commute)) continue;
+    // Homes, shops and offices prefer valuable land; industry and farms do not mind.
+    const value =
+      zone.id === 'industrial' || zone.id === 'agricultural'
+        ? 1
+        : landValueGrowth(landValueOfTile(state, t));
+    if (!state.rng.chance(GROWTH.spawnChance * demand * commute * value)) continue;
     const x = t % w.width;
     const y = (t - x) / w.width;
     const options = grownTypesFor(z, w.density[t]!).filter(

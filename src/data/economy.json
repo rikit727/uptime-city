@@ -1,0 +1,85 @@
+{
+  "//": "Economy. Money is whole pounds. Taxes are per day (charged hourly); taxRate multiplies them (0.5 to 1.5). Department budget levels scale running costs, crews on duty (depot crews x level, at least 1), service capacity, the daily automatic maintenance allowance and asset decay (below 100% assets wear faster). Months are 30 days. Fines are charged when the offence is recorded.",
+  "daysPerMonth": 30,
+  "taxes": {
+    "perResident": 1.6,
+    "perJob": {
+      "commercial": 2.2,
+      "office": 2.5,
+      "industrial": 1.8,
+      "agricultural": 0.5
+    },
+    "landValueWeight": {
+      "residential": 0.8,
+      "commercial": 0.4,
+      "office": 0.4,
+      "industrial": 0.2,
+      "agricultural": 0
+    },
+    "rateLevels": [0.5, 0.75, 1, 1.25, 1.5]
+  },
+  "tariffs": {
+    "electricityPerMWh": 140,
+    "waterPerMl": 2600
+  },
+  "fuel": {
+    "gasPerMWh": 55
+  },
+  "crewCostPerDay": {
+    "roads": 350,
+    "water": 380,
+    "power": 400,
+    "fire": 450
+  },
+  "budgetLevels": [0.5, 0.75, 1, 1.25, 1.5],
+  "departments": {
+    "roads": {
+      "name": "Highways",
+      "maintenancePerDay": 4000
+    },
+    "water": {
+      "name": "Water",
+      "maintenancePerDay": 5000
+    },
+    "power": {
+      "name": "Electricity",
+      "maintenancePerDay": 4000
+    },
+    "services": {
+      "name": "Public services",
+      "maintenancePerDay": 0
+    }
+  },
+  "autoMaintenance": {
+    "hour": 1,
+    "belowCondition": 45
+  },
+  "underfundedDecayFactor": 1,
+  "upkeepPerDay": {
+    "gas": 700,
+    "solar": 120,
+    "wind": 60,
+    "battery": 150,
+    "substation": 80,
+    "intake": 150,
+    "treatment": 600,
+    "storage": 60,
+    "booster": 50,
+    "sewage": 550,
+    "depot": 200
+  },
+  "loans": {
+    "amounts": [50000, 100000, 250000],
+    "ratePerMonth": 0.008,
+    "termMonths": 24,
+    "maxDebt": 600000
+  },
+  "fines": {
+    "licenceBreach": 5000,
+    "spillPerMl": 800,
+    "permitClash": 1500,
+    "permitOverrun": 1000
+  },
+  "historyMonths": 12,
+  "taxDemandEffect": 0.5
+}

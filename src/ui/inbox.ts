@@ -30,12 +30,14 @@ export const CREW_NAMES: Record<CrewType, string> = {
   roads: 'Highways',
   water: 'Water',
   power: 'Electricity',
+  fire: 'Fire',
 };
 
 const DEPOT_FOR: Record<CrewType, string> = {
   roads: 'highways depot',
   water: 'water depot',
   power: 'electricity depot',
+  fire: 'fire station',
 };
 
 /** "2 h 05 min", "35 min". */
@@ -52,6 +54,7 @@ export const crewLabel = (c: Crew): string => `${CREW_NAMES[c.type]} crew ${c.id
 
 /** "Resurfacing", "Burst water main repair", "Main renewal". */
 function workName(snap: SimSnapshot, o: WorkOrder): string {
+  if (o.type === 'firefighting') return 'Firefighting';
   if (o.type === 'repair') {
     const inc = snap.incidents.find((i) => i.id === o.incidentId);
     return inc ? `${inc.title} repair` : 'Repair';

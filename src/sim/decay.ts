@@ -16,6 +16,7 @@ import {
   tileClassAt,
 } from './assets';
 import type { SimEvent } from './events';
+import { decayFactor } from './ledger';
 import { incidentOnAsset, openIncident, orderOnAsset } from './incidents';
 import type { AssetRef, SimState } from './state';
 import { MINUTES_PER_DAY } from './time';
@@ -41,7 +42,7 @@ export function visitTile(state: SimState, t: number, emit: (e: SimEvent) => voi
     if (!cls) continue;
     const load = w.peakLoad[layer][t]! / 100;
     w.peakLoad[layer][t] = 0;
-    const loss = Math.round(dailyDecay(cls, load) * CONDITION_SCALE);
+    const loss = Math.round(dailyDecay(cls, load) * decayFactor(state, cls.crew) * CONDITION_SCALE);
     const cond = Math.max(0, Math.min(FULL_CONDITION, w.condition[layer][t]! - loss));
     w.condition[layer][t] = cond;
     const ref: AssetRef = { layer, id: t };
@@ -56,7 +57,8 @@ export function visitTile(state: SimState, t: number, emit: (e: SimEvent) => voi
   if (b && b.y * w.width + b.x === t) {
     const fa = facilityAssetDef(b);
     if (fa) {
-      b.condition = Math.max(0, b.condition - dailyDecay(fa.cls, b.peakLoad));
+      const loss = dailyDecay(fa.cls, b.peakLoad) * decayFactor(state, fa.cls.crew);
+      b.condition = Math.max(0, b.condition - loss);
       b.peakLoad = 0;
       const ref: AssetRef = { layer: 'facility', id: b.id };
       if (

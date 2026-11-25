@@ -18,7 +18,7 @@
  * Works on roads run under street works permits (roadworks.ts): a crew is not
  * sent before its permit's slot starts.
  */
-import { ASSETS, buildingDef } from './data';
+import { ASSETS, buildingDef, customerDefOf } from './data';
 import type { FacilityAssetClass, TileAssetClass } from './data';
 import {
   FAULT,
@@ -29,8 +29,9 @@ import {
   customersOf,
   setCondition,
 } from './assets';
-import { grownDefOf } from './buildings';
 import { availableCrews, crewCount, crewPosition, returnCrew, sendCrew } from './crews';
+import { eventClosures } from './cityEvents';
+import { spend } from './ledger';
 import type { SimEvent } from './events';
 import { rebuildNetwork } from './power';
 import {
@@ -74,7 +75,9 @@ export function rebuildFaults(state: SimState): void {
   const orders = new Map<number, WorkOrder>();
   for (const o of state.workOrders) {
     orders.set(o.id, o);
-    f.orderAt.set(assetKey(o.asset), o.id);
+    const key = assetKey(o.asset);
+    // Several engines can work one fire: the index keeps the first order.
+    if (!f.orderAt.has(key)) f.orderAt.set(key, o.id);
   }
   const add = (t: number, bit: number) => {
     f.tile[t] = f.tile[t]! | bit;
@@ -92,6 +95,11 @@ export function rebuildFaults(state: SimState): void {
   for (const o of state.workOrders) {
     if (o.status !== 'onSite') continue;
     const { layer, id } = o.asset;
+    // Fire engines close the road they park on.
+    if (o.type === 'firefighting') {
+      if (w.road[o.tile] !== 0) add(o.tile, FAULT.ROAD_CLOSED);
+      continue;
+    }
     if (layer === 'facility') f.offline.add(id);
     else if (layer === 'line') add(id, FAULT.LINE_OFF);
     else if (layer === 'main') {
@@ -102,6 +110,8 @@ export function rebuildFaults(state: SimState): void {
       add(id, o.closure === 'lane' ? FAULT.LANE_CLOSED : FAULT.ROAD_CLOSED);
     }
   }
+  // Roads beside a venue closed for an event (the player's choice when preparing it).
+  for (const t of eventClosures(state)) add(t, FAULT.ROAD_CLOSED);
   // A full closure wins over a lane closure on the same tile.
   for (let t = 0; t < f.tile.length; t++) {
     if (f.tile[t]! & FAULT.ROAD_CLOSED) f.tile[t] = f.tile[t]! & ~FAULT.LANE_CLOSED;
@@ -184,9 +194,10 @@ export function defaultTerms(
   };
 }
 
-function newOrder(
+/** Create a work order (the caller sets up its incident, permit and payment). */
+export function newOrder(
   state: SimState,
-  type: 'repair' | 'maintenance',
+  type: WorkOrder['type'],
   ref: AssetRef,
   crew: CrewType,
   terms: OrderTerms,
@@ -345,7 +356,7 @@ function pruneResolved(state: SimState): void {
 
 /** Remove a work order: refund planned work if asked and send its crew home. */
 export function cancelOrder(state: SimState, o: WorkOrder, refund: boolean): void {
-  if (refund && o.prepaid) state.cash += o.cost;
+  if (refund && o.prepaid) spend(state, 'maintenance', -o.cost);
   const crew = state.crews.find((c) => c.id === o.crewId);
   if (crew) returnCrew(state, crew);
   state.workOrders = state.workOrders.filter((x) => x.id !== o.id);
@@ -445,7 +456,7 @@ function dispatch(state: SimState, crew: Crew, o: WorkOrder): void {
 function completeOrder(state: SimState, o: WorkOrder, emit: Emit): void {
   const w = state.world;
   if (o.type === 'repair') {
-    state.cash -= o.cost;
+    spend(state, 'repairs', o.cost);
     setCondition(state, o.asset, Math.max(conditionOf(state, o.asset), ASSETS.repairRestoresTo));
     const inc = incidentById(state, o.incidentId);
     if (inc) resolveIncident(state, inc, 'repaired', emit);
@@ -520,7 +531,7 @@ function updateImpacts(state: SimState, emit: Emit): void {
   };
   let cityOut = 0;
   for (const b of state.buildings) {
-    const def = grownDefOf(b);
+    const def = customerDefOf(b.code);
     if (!def) continue;
     const dry = b.dryMinutes > 0;
     const off = b.unpoweredMinutes > 0;
@@ -546,6 +557,11 @@ function updateImpacts(state: SimState, emit: Emit): void {
 
   for (const inc of state.incidents) {
     if (!isOpen(inc)) continue;
+    // Fires set their own severity from their intensity (fire.ts).
+    if (inc.kind === 'fire') {
+      checkSla(inc, state.minute, emit);
+      continue;
+    }
     let found: [number, number] = [0, 0];
     const sum = (v: [number, number] | undefined) => {
       if (v) found = [found[0] + v[0], found[1] + v[1]];
@@ -591,14 +607,14 @@ function updateImpacts(state: SimState, emit: Emit): void {
     inc.severity = severityOf(inc);
     const o = inc.orderId ? orderById(state, inc.orderId) : undefined;
     if (o && !o.manualPriority) o.priority = priorityFor(inc.severity);
-    if (
-      inc.slaMinutes > 0 &&
-      !inc.slaBreached &&
-      state.minute - inc.openedMinute > inc.slaMinutes
-    ) {
-      inc.slaBreached = true;
-      emit({ type: 'slaBreached', id: inc.id, name: inc.title });
-    }
+    checkSla(inc, state.minute, emit);
+  }
+}
+
+function checkSla(inc: Incident, minute: number, emit: Emit): void {
+  if (inc.slaMinutes > 0 && !inc.slaBreached && minute - inc.openedMinute > inc.slaMinutes) {
+    inc.slaBreached = true;
+    emit({ type: 'slaBreached', id: inc.id, name: inc.title });
   }
 }
 

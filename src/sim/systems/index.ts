@@ -5,6 +5,12 @@
 import { assetsSystem } from './assets';
 import { clockSystem } from './clock';
 import { demandSystem } from './demand';
+import { economySystem } from './economy';
+import { eventsSystem } from './events';
+import { fireSystem } from './fire';
+import { happinessSystem } from './happiness';
+import { pollutionSystem } from './pollution';
+import { servicesSystem } from './services';
 import { growthSystem } from './growth';
 import { incidentsSystem } from './incidents';
 import { powerSystem } from './power';
@@ -24,5 +30,11 @@ export const SYSTEMS: readonly SimSystem[] = [
   trafficSystem,
   assetsSystem,
   incidentsSystem,
+  fireSystem,
+  eventsSystem,
+  servicesSystem,
   growthSystem,
+  pollutionSystem,
+  economySystem,
+  happinessSystem,
 ];

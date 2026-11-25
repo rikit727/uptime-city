@@ -19,7 +19,16 @@ export interface ToolDef {
   /** The shortcut needs Shift held. */
   shift?: boolean;
   keyLabel: string;
-  group: 'select' | 'roads' | 'zones' | 'power' | 'water' | 'maintain' | 'demolish';
+  group:
+    | 'select'
+    | 'roads'
+    | 'zones'
+    | 'power'
+    | 'water'
+    | 'maintain'
+    | 'services'
+    | 'landmarks'
+    | 'demolish';
   tool: ToolId;
   swatch?: string;
 }
@@ -251,6 +260,114 @@ export const TOOLS: readonly ToolDef[] = [
     keyLabel: '⇧3',
     group: 'maintain',
     tool: { kind: 'facility', facility: 'powerDepot' },
+  },
+  {
+    key: 'facility:fireStation',
+    label: 'Fire station',
+    code: 'Digit4',
+    shift: true,
+    keyLabel: '⇧4',
+    group: 'services',
+    tool: { kind: 'facility', facility: 'fireStation' },
+  },
+  {
+    key: 'facility:policeStation',
+    label: 'Police station',
+    code: 'Digit5',
+    shift: true,
+    keyLabel: '⇧5',
+    group: 'services',
+    tool: { kind: 'facility', facility: 'policeStation' },
+  },
+  {
+    key: 'facility:healthCentre',
+    label: 'Health centre',
+    code: 'Digit6',
+    shift: true,
+    keyLabel: '⇧6',
+    group: 'services',
+    tool: { kind: 'facility', facility: 'healthCentre' },
+  },
+  {
+    key: 'facility:school',
+    label: 'School',
+    code: 'Digit7',
+    shift: true,
+    keyLabel: '⇧7',
+    group: 'services',
+    tool: { kind: 'facility', facility: 'school' },
+  },
+  {
+    key: 'facility:wasteDepot',
+    label: 'Waste depot',
+    code: 'Digit8',
+    shift: true,
+    keyLabel: '⇧8',
+    group: 'services',
+    tool: { kind: 'facility', facility: 'wasteDepot' },
+  },
+  {
+    key: 'facility:recyclingCentre',
+    label: 'Recycling centre',
+    code: 'Digit9',
+    shift: true,
+    keyLabel: '⇧9',
+    group: 'services',
+    tool: { kind: 'facility', facility: 'recyclingCentre' },
+  },
+  {
+    key: 'facility:landfill',
+    label: 'Landfill site',
+    code: 'Digit0',
+    shift: true,
+    keyLabel: '⇧0',
+    group: 'services',
+    tool: { kind: 'facility', facility: 'landfill' },
+  },
+  {
+    key: 'facility:stadium',
+    label: 'Stadium',
+    code: 'KeyS',
+    shift: true,
+    keyLabel: '⇧S',
+    group: 'landmarks',
+    tool: { kind: 'facility', facility: 'stadium' },
+  },
+  {
+    key: 'facility:shoppingCentre',
+    label: 'Shopping centre',
+    code: 'KeyC',
+    shift: true,
+    keyLabel: '⇧C',
+    group: 'landmarks',
+    tool: { kind: 'facility', facility: 'shoppingCentre' },
+  },
+  {
+    key: 'facility:hospital',
+    label: 'Hospital',
+    code: 'KeyH',
+    shift: true,
+    keyLabel: '⇧H',
+    group: 'landmarks',
+    tool: { kind: 'facility', facility: 'hospital' },
+  },
+  {
+    key: 'facility:university',
+    label: 'University',
+    code: 'KeyU',
+    shift: true,
+    keyLabel: '⇧U',
+    group: 'landmarks',
+    tool: { kind: 'facility', facility: 'university' },
+  },
+  {
+    key: 'facility:conferenceCentre',
+    label: 'Events centre',
+    code: 'KeyE',
+    shift: true,
+    keyLabel: '⇧E',
+    group: 'landmarks',
+    tool: { kind: 'facility', facility: 'conferenceCentre' },
   },
   {
     key: 'bulldoze',

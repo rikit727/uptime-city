@@ -5,7 +5,7 @@
  * Vans move every frame; markers and barriers rebuild when work changes.
  */
 import { Color, Group, Matrix4, MeshLambertMaterial } from 'three';
-import { crewPosition, isOpen } from '../../sim';
+import { buildingDef, crewPosition, isOpen } from '../../sim';
 import type { CrewType, SimSnapshot } from '../../sim';
 import { InstanceBatch } from './instanceBatch';
 import { unitBox, unitCylinder } from './shapes';
@@ -14,6 +14,7 @@ const VAN_COLOURS: Record<CrewType, string> = {
   roads: '#e8a33d',
   water: '#3d85c6',
   power: '#f1c232',
+  fire: '#d62728',
 };
 /** Severity 1..4: light to dark, and taller, so it reads without colour too. */
 const SEVERITY_COLOURS = ['#ffffff', '#fde725', '#f68f46', '#d0413e', '#7a0403'];
@@ -25,6 +26,7 @@ export class CrewLayer {
   private readonly markers: InstanceBatch;
   private readonly heads: InstanceBatch;
   private readonly barriers: InstanceBatch;
+  private readonly flames: InstanceBatch;
   private readonly m = new Matrix4();
   private readonly c = new Color();
   private builtKey = '';
@@ -41,6 +43,13 @@ export class CrewLayer {
       false,
     );
     this.barriers = new InstanceBatch(this.group, unitBox(), mat(), 32, false);
+    this.flames = new InstanceBatch(
+      this.group,
+      unitBox(),
+      new MeshLambertMaterial({ emissive: '#ff5a00', emissiveIntensity: 0.8 }),
+      8,
+      false,
+    );
   }
 
   invalidate(): void {
@@ -59,6 +68,7 @@ export class CrewLayer {
       this.builtKey = key;
       this.rebuildSites(snap);
     }
+    this.updateFlames(snap, now);
     // Markers bob gently so they catch the eye.
     this.heads.mesh.position.y = 0.08 * Math.sin(now / 300);
   }
@@ -72,6 +82,28 @@ export class CrewLayer {
       this.vans.add(this.m, this.c.set(VAN_COLOURS[crew.type]));
     }
     this.vans.end();
+  }
+
+  /** Flickering flames over burning buildings, taller as more of the building is alight. */
+  private updateFlames(snap: SimSnapshot, now: number): void {
+    this.flames.begin();
+    for (const f of snap.fires) {
+      const b = snap.buildingById.get(f.building);
+      const def = b ? buildingDef(b.code) : undefined;
+      if (!b || !def) continue;
+      const [fw, fd] = def.footprint;
+      const k = f.intensity / 100;
+      for (let i = 0; i < 3; i++) {
+        const flicker = 0.75 + 0.25 * Math.sin(now / 90 + i * 2.1 + f.id);
+        const hgt = (0.3 + 1.4 * k) * flicker;
+        const sx = fw * (0.25 + 0.35 * k);
+        const sz = fd * (0.25 + 0.35 * k);
+        const ox = (i - 1) * 0.18 * fw;
+        this.m.makeScale(sx / 2, hgt, sz / 2).setPosition(b.x + fw / 2 + ox, 0.3, b.y + fd / 2);
+        this.flames.add(this.m, this.c.set(i === 1 ? '#ffb000' : '#e6550d'));
+      }
+    }
+    this.flames.end();
   }
 
   private rebuildSites(snap: SimSnapshot): void {

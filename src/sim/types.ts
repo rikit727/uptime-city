@@ -41,12 +41,63 @@ export type WaterFacilityKind = 'intake' | 'treatment' | 'storage' | 'booster' |
 /** Maintenance depots (src/data/assets.json `depots`). */
 export type DepotId = 'roadsDepot' | 'waterDepot' | 'powerDepot';
 
-/** Any player-placed facility. */
-export type FacilityId = PowerFacilityId | WaterFacilityId | DepotId;
+/** Public services and landmarks (src/data/services.json `facilities`). */
+export type ServiceFacilityId =
+  | 'fireStation'
+  | 'policeStation'
+  | 'healthCentre'
+  | 'school'
+  | 'wasteDepot'
+  | 'recyclingCentre'
+  | 'landfill'
+  | 'stadium'
+  | 'shoppingCentre'
+  | 'hospital'
+  | 'university'
+  | 'conferenceCentre';
+export type ServiceKind =
+  'fire' | 'police' | 'health' | 'school' | 'waste' | 'recycling' | 'landfill' | 'landmark';
+/** Services whose coverage is measured by road travel time. */
+export type CoverageKind = 'fire' | 'police' | 'health' | 'school' | 'waste';
+export const COVERAGE_KINDS: readonly CoverageKind[] = [
+  'fire',
+  'police',
+  'health',
+  'school',
+  'waste',
+];
 
-/** Crew types, each based at its own kind of depot. */
-export type CrewType = 'roads' | 'water' | 'power';
-export const CREW_TYPES: readonly CrewType[] = ['roads', 'water', 'power'];
+/** Any player-placed facility. */
+export type FacilityId = PowerFacilityId | WaterFacilityId | DepotId | ServiceFacilityId;
+
+/** Crew types, each based at its own kind of depot (fire engines at fire stations). */
+export type CrewType = 'roads' | 'water' | 'power' | 'fire';
+export const CREW_TYPES: readonly CrewType[] = ['roads', 'water', 'power', 'fire'];
+
+/** Council departments with a budget (economy.json `departments`). */
+export type Department = 'roads' | 'water' | 'power' | 'services';
+export const DEPARTMENTS: readonly Department[] = ['roads', 'water', 'power', 'services'];
+
+/** Zones that pay taxes at an adjustable rate. */
+export const TAX_ZONES: readonly ZoneId[] = [
+  'residential',
+  'commercial',
+  'office',
+  'industrial',
+  'agricultural',
+];
+
+/** Event types at landmarks (services.json `events`). */
+export type CityEventType = 'match' | 'concert' | 'conference' | 'sale' | 'graduation';
+
+/** Preparations the player can make for an event. */
+export type EventMeasure = 'policing' | 'stewarding' | 'closeRoads' | 'cleanup';
+export const EVENT_MEASURES: readonly EventMeasure[] = [
+  'policing',
+  'stewarding',
+  'closeRoads',
+  'cleanup',
+];
 
 /** Tile assets: one per utility layer on a tile. */
 export type TileAssetLayer = 'road' | 'main' | 'line';
@@ -55,7 +106,16 @@ export const TILE_ASSET_LAYERS: readonly TileAssetLayer[] = ['road', 'main', 'li
 export type AssetLayer = TileAssetLayer | 'facility';
 
 /** Incident kinds (src/data/assets.json `incidents`). */
-export type IncidentKind = 'burst' | 'cableFault' | 'roadDefect' | 'facilityFault' | 'overflow';
+export type IncidentKind =
+  'burst' | 'cableFault' | 'roadDefect' | 'facilityFault' | 'overflow' | 'fire';
+export const INCIDENT_KINDS: readonly IncidentKind[] = [
+  'burst',
+  'cableFault',
+  'roadDefect',
+  'facilityFault',
+  'overflow',
+  'fire',
+];
 
 /** Water main ids (src/data/water.json `mains`). Codes live in the world's water layer. */
 export type MainTypeId = 'distribution' | 'feeder' | 'trunk';

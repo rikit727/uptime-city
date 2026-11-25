@@ -8,27 +8,46 @@ import { rebuildCache } from './cache';
 import { buildingDef } from './data';
 import { Rng } from './rng';
 import {
+  EXPENSE_LINES,
+  INCOME_LINES,
   emptyCache,
+  emptyFireKpis,
   emptyKpis,
+  emptyLedger,
   emptyRoadworksKpis,
+  emptyWaste,
   initialAssetsState,
+  initialEconomyState,
+  initialHappiness,
+  initialServicesState,
   initialTrafficState,
   initialWaterState,
+  pollutionCellsAcross,
 } from './state';
 import type {
   AssetsState,
   Building,
+  CityEvent,
+  Complaint,
   Crew,
+  EconomyState,
   Estate,
+  Fire,
   GameRules,
+  HappinessState,
   Incident,
+  Ledger,
   Permit,
+  ServicesState,
   SimState,
   TrafficState,
   WaterState,
   WeatherState,
   WorkOrder,
 } from './state';
+import { CITY } from './data';
+import { CREW_TYPES, DEPARTMENTS, EVENT_MEASURES, INCIDENT_KINDS, TAX_ZONES } from './types';
+import type { CityEventType } from './types';
 import { TRIP_PURPOSES } from './data';
 import type { TripPurpose } from './data';
 import { TILE_ASSET_LAYERS } from './types';
@@ -95,6 +114,14 @@ export interface SerializedState {
   crews: Crew[];
   traffic: SerializedTraffic;
   permits: Permit[];
+  economy: EconomyState;
+  services: ServicesState;
+  fires: Fire[];
+  events: CityEvent[];
+  complaints: Complaint[];
+  happiness: HappinessState;
+  /** Pollution grids (index × 10), run-length encoded. */
+  pollution: { air: number[]; noise: number[] };
 }
 
 /** Traffic state as saved: typed arrays run-length encoded. */
@@ -253,6 +280,20 @@ export function serializeState(state: SimState): SerializedState {
       orders: [...p.orders],
       dug: [...p.dug],
     })),
+    economy: JSON.parse(JSON.stringify(state.economy)) as EconomyState,
+    services: JSON.parse(JSON.stringify(state.services)) as ServicesState,
+    fires: state.fires.map((f) => ({ ...f })),
+    events: state.events.map((e) => ({ ...e, measures: [...e.measures] })),
+    complaints: state.complaints.map((c) => ({ ...c })),
+    happiness: {
+      ...state.happiness,
+      factors: { ...state.happiness.factors },
+      sumFactors: { ...state.happiness.sumFactors },
+    },
+    pollution: {
+      air: rleEncode(state.pollution.air),
+      noise: rleEncode(state.pollution.noise),
+    },
   };
 }
 
@@ -329,7 +370,7 @@ export function deserializeState(data: SerializedState): SimState {
     minute: num(data.minute, 'time'),
     rng: new Rng(num(data.rngState, 'RNG state')),
     cash: num(data.cash, 'cash'),
-    rules: { weatherEvents: rules?.weatherEvents !== false },
+    rules: { weatherEvents: rules?.weatherEvents !== false, fires: rules?.fires !== false },
     world,
     buildings,
     nextBuildingId: num(data.nextBuildingId, 'building counter'),
@@ -352,6 +393,13 @@ export function deserializeState(data: SerializedState): SimState {
     crews: parseList(data.crews, 'crews', parseCrew),
     traffic: parseTraffic(data.traffic, world),
     permits: parseList(data.permits, 'permits', parsePermit),
+    economy: parseEconomy(data.economy),
+    services: parseServices(data.services),
+    fires: parseList(data.fires, 'fires', parseFire),
+    events: parseList(data.events, 'events', parseEvent),
+    complaints: parseList(data.complaints, 'complaints', parseComplaint),
+    happiness: parseHappiness(data.happiness),
+    pollution: parsePollution(data.pollution, world),
     cache: emptyCache(world),
   };
   rebuildCache(state);
@@ -421,11 +469,7 @@ function oneOf<T extends string>(v: unknown, options: readonly T[], what: string
 function parseIncident(r: Record<string, unknown>): Incident {
   return {
     id: num(r.id, 'incident id'),
-    kind: oneOf(
-      r.kind,
-      ['burst', 'cableFault', 'roadDefect', 'facilityFault', 'overflow'],
-      'incident',
-    ),
+    kind: oneOf(r.kind, INCIDENT_KINDS, 'incident'),
     title: typeof r.title === 'string' ? r.title : 'Incident',
     asset: r.asset === null ? null : parseRef(r.asset),
     tile: num(r.tile, 'incident tile'),
@@ -447,8 +491,8 @@ function parseIncident(r: Record<string, unknown>): Incident {
 function parseOrder(r: Record<string, unknown>): WorkOrder {
   return {
     id: num(r.id, 'work order id'),
-    type: oneOf(r.type, ['repair', 'maintenance'], 'work order'),
-    crew: oneOf(r.crew, ['roads', 'water', 'power'], 'work order'),
+    type: oneOf(r.type, ['repair', 'maintenance', 'firefighting'], 'work order'),
+    crew: oneOf(r.crew, CREW_TYPES, 'work order'),
     asset: parseRef(r.asset),
     tile: num(r.tile, 'work order tile'),
     incidentId: num(r.incidentId, 'work order incident'),
@@ -526,7 +570,7 @@ function parsePermit(r: Record<string, unknown>): Permit {
 function parseCrew(r: Record<string, unknown>): Crew {
   return {
     id: num(r.id, 'crew id'),
-    type: oneOf(r.type, ['roads', 'water', 'power'], 'crew'),
+    type: oneOf(r.type, CREW_TYPES, 'crew'),
     depot: num(r.depot, 'crew depot'),
     status: oneOf(r.status, ['idle', 'enRoute', 'onSite', 'returning'], 'crew'),
     orderId: num(r.orderId, 'crew work order'),
@@ -572,5 +616,166 @@ function parseBuilding(raw: unknown, world: WorldState): Building {
     condition,
     builtDay,
     peakLoad,
+  };
+}
+
+// ---- milestone 6 state ----------------------------------------------------------
+
+const obj = (v: unknown, what: string): Record<string, unknown> => {
+  if (typeof v !== 'object' || v === null) throw new Error(`Save is missing ${what}.`);
+  return v as Record<string, unknown>;
+};
+
+function parseLedger(raw: unknown): Ledger {
+  const r = obj(raw, 'the accounts');
+  const out = emptyLedger();
+  const inc = obj(r.income, 'the accounts');
+  const exp = obj(r.expenses, 'the accounts');
+  for (const k of INCOME_LINES) out.income[k] = num(inc[k], `income ${k}`);
+  for (const k of EXPENSE_LINES) out.expenses[k] = num(exp[k], `expenses ${k}`);
+  out.borrowed = num(r.borrowed, 'borrowing');
+  out.repaid = num(r.repaid, 'repayments');
+  return out;
+}
+
+function parseEconomy(raw: unknown): EconomyState {
+  const r = obj(raw, 'the economy');
+  const out = initialEconomyState();
+  const budgets = obj(r.budgets, 'budgets');
+  for (const d of DEPARTMENTS) out.budgets[d] = num(budgets[d], `budget ${d}`);
+  const rates = obj(r.taxRates, 'tax rates');
+  for (const z of TAX_ZONES) out.taxRates[z] = num(rates[z], `tax rate ${z}`);
+  out.month = parseLedger(r.month);
+  out.lastMonth = r.lastMonth === null ? null : parseLedger(r.lastMonth);
+  out.history = arr(r.history, 'account history').map((h) => {
+    const x = obj(h, 'account history');
+    return {
+      month: num(x.month, 'month'),
+      income: num(x.income, 'income'),
+      expenses: num(x.expenses, 'expenses'),
+      cash: num(x.cash, 'cash'),
+    };
+  });
+  const m = obj(r.meter, 'meters');
+  out.meter = {
+    electricityMWh: num(m.electricityMWh, 'meter'),
+    gasMWh: num(m.gasMWh, 'meter'),
+    waterMl: num(m.waterMl, 'meter'),
+  };
+  out.loans = parseList(r.loans, 'loans', (x) => ({
+    id: num(x.id, 'loan id'),
+    principal: num(x.principal, 'loan'),
+    balance: num(x.balance, 'loan'),
+    payment: num(x.payment, 'loan'),
+    monthsLeft: num(x.monthsLeft, 'loan'),
+  }));
+  out.nextLoanId = num(r.nextLoanId, 'loan counter');
+  return out;
+}
+
+const pairs = (v: unknown, what: string): [number, number][] =>
+  arr(v, what).map((p) => {
+    const a = arr(p, what);
+    return [num(a[0], what), num(a[1], what)];
+  });
+
+function parseServices(raw: unknown): ServicesState {
+  const r = obj(raw, 'the services');
+  const out = initialServicesState();
+  out.ratios = pairs(r.ratios, 'service figures');
+  out.tipping = num(r.tipping, 'waste figures');
+  out.landfill = pairs(r.landfill, 'landfill figures');
+  const w = obj(r.waste, 'waste figures');
+  const waste = emptyWaste();
+  for (const k of Object.keys(waste) as (keyof typeof waste)[]) waste[k] = num(w[k], `waste ${k}`);
+  out.waste = waste;
+  const f = obj(r.fireKpi, 'fire figures');
+  const kpi = emptyFireKpis();
+  for (const k of Object.keys(kpi) as (keyof typeof kpi)[]) kpi[k] = num(f[k], `fire ${k}`);
+  out.fireKpi = kpi;
+  out.nextFireId = num(r.nextFireId, 'fire counter');
+  out.nextEventId = num(r.nextEventId, 'event counter');
+  out.nextComplaintId = num(r.nextComplaintId, 'complaint counter');
+  return out;
+}
+
+function parseFire(r: Record<string, unknown>): Fire {
+  return {
+    id: num(r.id, 'fire id'),
+    building: num(r.building, 'fire'),
+    tile: num(r.tile, 'fire'),
+    hydrant: num(r.hydrant, 'fire'),
+    startMinute: num(r.startMinute, 'fire'),
+    intensity: num(r.intensity, 'fire'),
+    peak: num(r.peak, 'fire'),
+    incidentId: num(r.incidentId, 'fire'),
+    firstArrival: num(r.firstArrival, 'fire'),
+  };
+}
+
+const EVENT_TYPES: readonly CityEventType[] = [
+  'match',
+  'concert',
+  'conference',
+  'sale',
+  'graduation',
+];
+
+function parseEvent(r: Record<string, unknown>): CityEvent {
+  return {
+    id: num(r.id, 'event id'),
+    type: oneOf(r.type, EVENT_TYPES, 'event'),
+    venue: num(r.venue, 'event venue'),
+    start: num(r.start, 'event time'),
+    end: num(r.end, 'event time'),
+    attendance: num(r.attendance, 'event attendance'),
+    measures: arr(r.measures, 'event arrangements').map((m) =>
+      oneOf(m, EVENT_MEASURES, 'event arrangement'),
+    ),
+    status: oneOf(r.status, ['booked', 'live', 'done'], 'event'),
+    congestion: num(r.congestion, 'event figures'),
+    trouble: r.trouble === true,
+    litter: r.litter === true,
+    revenue: num(r.revenue, 'event figures'),
+  };
+}
+
+function parseComplaint(r: Record<string, unknown>): Complaint {
+  if (typeof r.text !== 'string' || typeof r.kind !== 'string' || typeof r.key !== 'string')
+    throw new Error('Save has a corrupt complaint.');
+  return {
+    id: num(r.id, 'complaint id'),
+    minute: num(r.minute, 'complaint time'),
+    kind: r.kind,
+    text: r.text,
+    tile: num(r.tile, 'complaint tile'),
+    key: r.key,
+  };
+}
+
+function parseHappiness(raw: unknown): HappinessState {
+  const r = obj(raw, 'happiness');
+  const out = initialHappiness();
+  out.city = num(r.city, 'happiness');
+  out.complaintPenalty = num(r.complaintPenalty, 'happiness');
+  out.cursor = num(r.cursor, 'happiness round');
+  out.sumWeight = num(r.sumWeight, 'happiness round');
+  out.sumScore = num(r.sumScore, 'happiness round');
+  const f = obj(r.factors, 'happiness');
+  const sf = obj(r.sumFactors, 'happiness round');
+  for (const k of Object.keys(out.factors) as (keyof typeof out.factors)[]) {
+    out.factors[k] = num(f[k], `happiness ${k}`);
+    out.sumFactors[k] = num(sf[k], `happiness ${k}`);
+  }
+  return out;
+}
+
+function parsePollution(raw: unknown, world: WorldState): SimState['pollution'] {
+  const r = obj(raw, 'pollution');
+  const cs = CITY.pollution.cellSize;
+  const cells = pollutionCellsAcross(world.width, cs) * pollutionCellsAcross(world.height, cs);
+  return {
+    air: rleDecode16(arr(r.air, 'air pollution'), cells),
+    noise: rleDecode16(arr(r.noise, 'noise pollution'), cells),
   };
 }

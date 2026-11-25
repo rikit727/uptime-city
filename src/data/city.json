@@ -1,0 +1,123 @@
+{
+  "//": "Pollution, land value, happiness and complaints. Pollution is computed hourly on a coarse grid (cellSize tiles) and spread with an exponential falloff (spreadTiles). Air and noise are in arbitrary index points: below 'quiet' is fine, at 'bad' the full penalty applies.",
+  "pollution": {
+    "cellSize": 4,
+    "spreadTiles": {
+      "air": 6,
+      "noise": 4
+    },
+    "traffic": {
+      "airPerPcu": 0.004,
+      "noisePerPcu": 0.006
+    },
+    "highwayNoise": 1.5,
+    "gasAirPerMW": 0.15,
+    "sewageAir": 1.5,
+    "thresholds": {
+      "air": {
+        "quiet": 3,
+        "bad": 15
+      },
+      "noise": {
+        "quiet": 3,
+        "bad": 15
+      }
+    }
+  },
+  "landValue": {
+    "base": 0.35,
+    "services": 0.3,
+    "riverBonus": 0.08,
+    "riverTiles": 6,
+    "airPenalty": 0.3,
+    "noisePenalty": 0.2,
+    "growthMin": 0.5,
+    "growthMax": 1.4
+  },
+  "happiness": {
+    "weights": {
+      "services": 25,
+      "utilities": 20,
+      "waste": 10,
+      "commute": 15,
+      "pollution": 15,
+      "taxes": 10,
+      "landValue": 5
+    },
+    "complaintPenalty": 1,
+    "maxComplaintPenalty": 10,
+    "demandEffect": 0.6
+  },
+  "complaints": {
+    "kept": 40,
+    "waterHours": [3, 6, 12, 24],
+    "powerHours": [2, 4, 8, 16],
+    "cooldownHours": {
+      "pressure": 24,
+      "traffic": 8,
+      "pollution": 24,
+      "bins": 72,
+      "services": 48,
+      "noise": 24,
+      "rota": 12
+    },
+    "vcComplaint": 1.0
+  },
+  "streets": {
+    "names": [
+      "Mill",
+      "Church",
+      "Station",
+      "Victoria",
+      "Albert",
+      "Park",
+      "Queen",
+      "King",
+      "Chapel",
+      "Bridge",
+      "Market",
+      "Orchard",
+      "Meadow",
+      "Willow",
+      "Elm",
+      "Ash",
+      "Beech",
+      "Cedar",
+      "Hawthorn",
+      "Holly",
+      "Rose",
+      "Primrose",
+      "Kingfisher",
+      "Heron",
+      "Swan",
+      "Brook",
+      "Ferry",
+      "Wharf",
+      "Granary",
+      "Malt",
+      "Tannery",
+      "Forge",
+      "Abbey",
+      "Priory",
+      "Castle",
+      "Manor",
+      "Grange",
+      "Vicarage",
+      "School",
+      "Farm",
+      "Spring",
+      "Well",
+      "Hill",
+      "Dale",
+      "Moor",
+      "Heath",
+      "Green",
+      "Common",
+      "Riverside",
+      "Canal"
+    ],
+    "local": ["Road", "Street", "Lane", "Close", "Grove", "Crescent", "Row", "Gardens"],
+    "avenue": ["Avenue", "Parade", "Boulevard"],
+    "highway": ["Way", "Bypass", "Expressway"]
+  }
+}

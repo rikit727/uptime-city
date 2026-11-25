@@ -1,7 +1,10 @@
 import { addBuilding } from '../buildings';
 import { facilityDef } from '../data';
 import type { AnyFacilityDef } from '../data';
+import { scheduleEvents } from '../cityEvents';
 import { createDepotCrews } from '../crews';
+import { dutyCrews } from '../economy';
+import { rebuildServices, updateRatios } from '../services';
 import { rebuildEstates } from '../estates';
 import { rebuildNetwork } from '../power';
 import type { SimState } from '../state';
@@ -63,7 +66,8 @@ export function planPlaceFacility(state: SimState, cmd: PlaceFacilityCommand): C
       (clear ? affected : blocked).push(i);
     }
   }
-  const layer = def.utility === 'depot' ? 'assets' : def.utility;
+  const layer =
+    def.utility === 'depot' ? 'assets' : def.utility === 'service' ? 'building' : def.utility;
   const plan = finalisePlan(state, affected, blocked, def.cost, ['zone', 'building', layer], '');
   if (affected.length + blocked.length < fw * fd) return refuse(plan, 'Too close to the map edge.');
   if (blocked.length > 0) {
@@ -99,5 +103,11 @@ export function applyPlaceFacility(
   if (rezoned) rebuildEstates(state);
   if (def.utility === 'power') rebuildNetwork(state);
   else if (def.utility === 'water') rebuildWater(state);
-  else createDepotCrews(state, b);
+  else if (def.utility === 'depot') createDepotCrews(state, b, dutyCrews(state, b));
+  else {
+    createDepotCrews(state, b, dutyCrews(state, b));
+    rebuildServices(state);
+    updateRatios(state);
+    scheduleEvents(state);
+  }
 }
