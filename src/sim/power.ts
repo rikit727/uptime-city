@@ -60,11 +60,12 @@ export function rebuildNetwork(state: SimState): void {
   const cap = new Float64Array(n);
   const fault = cache.faults.tile;
   const offline = cache.faults.offline;
+  const lineCap = new Float64Array(256);
+  for (const l of POWER.lines) lineCap[l.code] = l.capacityMW;
   for (let i = 0; i < n; i++) {
     const code = w.power[i]!;
     // A faulted line tile (or one being worked on) is not part of the network.
-    if (code !== 0 && (fault[i]! & FAULT.LINE_OFF) === 0)
-      cap[i] = POWER.lines.find((l) => l.code === code)?.capacityMW ?? 0;
+    if (code !== 0 && (fault[i]! & FAULT.LINE_OFF) === 0) cap[i] = lineCap[code]!;
   }
   const facilities: Building[] = [];
   for (const b of state.buildings) {
@@ -75,16 +76,18 @@ export function rebuildNetwork(state: SimState): void {
       for (let dx = 0; dx < fw; dx++) cap[tileIndex(w, b.x + dx, b.y + dy)] = Infinity;
   }
 
-  const neighbours = (t: number, out: number[]): number[] => {
-    out.length = 0;
-    const x = t % w.width;
-    if (x > 0) out.push(t - 1);
-    if (x < w.width - 1) out.push(t + 1);
-    if (t >= w.width) out.push(t - w.width);
-    if (t + w.width < n) out.push(t + w.width);
-    return out;
+  const width = w.width;
+  /** Fills `nb` with a tile's neighbours (left, right, up, down); returns how many. */
+  const nb = new Int32Array(4);
+  const neighbours = (t: number): number => {
+    const x = t % width;
+    let k = 0;
+    if (x > 0) nb[k++] = t - 1;
+    if (x < width - 1) nb[k++] = t + 1;
+    if (t >= width) nb[k++] = t - width;
+    if (t + width < n) nb[k++] = t + width;
+    return k;
   };
-  const nb: number[] = [];
 
   // Islands by flood fill.
   const island = cache.network.islandAt;
@@ -99,7 +102,8 @@ export function rebuildNetwork(state: SimState): void {
     stack.push(start);
     while (stack.length > 0) {
       const t = stack.pop()!;
-      for (const m of neighbours(t, nb)) {
+      for (let k = neighbours(t) - 1; k >= 0; k--) {
+        const m = nb[k]!;
         if (cap[m] === 0 || island[m] !== 0) continue;
         island[m] = id;
         stack.push(m);
@@ -143,7 +147,8 @@ export function rebuildNetwork(state: SimState): void {
       stack.push(t0);
       while (stack.length > 0) {
         const t = stack.pop()!;
-        for (const m of neighbours(t, nb)) {
+        for (let k = neighbours(t) - 1; k >= 0; k--) {
+          const m = nb[k]!;
           if (seen[m] || cap[m]! < r) continue;
           seen[m] = 1;
           stack.push(m);
@@ -174,9 +179,10 @@ export function rebuildNetwork(state: SimState): void {
         x <= Math.min(w.width - 1, Math.ceil(c.x + r));
         x++
       ) {
-        const d = Math.hypot(x - c.x, y - c.y);
-        const t = tileIndex(w, x, y);
-        if (d <= r && d < best[t]!) {
+        // Squared distances: exact for these half-tile coordinates, same order as hypot.
+        const d = (x - c.x) ** 2 + (y - c.y) ** 2;
+        const t = y * width + x;
+        if (d <= r * r && d < best[t]!) {
           best[t] = d;
           coverage[t] = s.id;
         }

@@ -15,7 +15,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "icons": "node scripts/gen-icons.mjs"
+    "icons": "node scripts/gen-icons.mjs",
+    "profile": "vitest run --config vitest.perf.config.ts"
   },
   "dependencies": {
     "three": "^0.187.0",

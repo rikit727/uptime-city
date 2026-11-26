@@ -25,7 +25,7 @@ import { dailyTaxes } from './economy';
 import { closedByFire } from './fire';
 import { earn } from './ledger';
 import { cellOfTile } from './traffic';
-import { serviceTile } from './water';
+import { linksOf } from './water';
 
 const HW = CITY.happiness.weights;
 
@@ -46,7 +46,7 @@ export function homeFactors(state: SimState, b: Building): HappinessScores {
   if (b.dryMinutes > 0) utilities -= 0.5;
   else {
     const def = buildingDef(b.code);
-    const t = def?.role === 'grown' ? serviceTile(w, b, def) : -1;
+    const t = def?.role === 'grown' ? linksOf(state, b, def).service : -1;
     if (t >= 0 && w.pressure[t]! < WATER.pressure.lowM) utilities -= 0.25;
   }
   const commuteMin = road >= 0 ? (state.traffic.commute[cellOfTile(w, road)] ?? 0) / 10 : 0;
@@ -220,7 +220,7 @@ export function hourlyComplaints(state: SimState): void {
   for (const b of state.buildings) {
     const def = buildingDef(b.code);
     if (def?.role !== 'grown' || def.residents <= 0) continue;
-    const st = serviceTile(w, b, def);
+    const st = linksOf(state, b, def).service;
     if (!lowPressure && b.dryMinutes === 0 && st >= 0 && w.pressure[st]! < WATER.pressure.lowM)
       lowPressure = b;
     // (Saved state only: the dispatch's shedding flag is not saved.)

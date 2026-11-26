@@ -4,12 +4,13 @@ Run a modern city day to day: utilities, roads, maintenance, incidents and
 budgets. A low-poly 3D city builder for laptop and browser, installable as a
 PWA and playable offline. No backend.
 
-Status: early development (see `PROGRESS.md`). Roads, zoning, seasons and
-weather, building growth (including farms and industrial estates), the power
-network, water supply with pressure zones, wastewater and irrigation, asset
-condition and failures, incidents, work orders and repair crews, traffic with
-congestion and cosmetic cars, roadworks with street works permits, and save/load
-work today.
+Status: v1 feature-complete (see `PROGRESS.md`). Roads and zoning, seasons and
+weather, building growth (including farms and industrial estates), power, water
+supply with pressure zones, wastewater and irrigation, asset condition and failures,
+incidents and repair crews, traffic with congestion and cosmetic cars, roadworks with
+street works permits, public services, fires and hydrants, waste, landmarks and an
+events calendar, pollution, the economy, happiness and complaints, map overlays, a KPI
+dashboard, a sandbox mode and four scenarios.
 
 ## Run locally
 
@@ -21,7 +22,9 @@ npm run dev        # http://localhost:5173
 ```
 
 Other commands: `npm test`, `npm run lint`, `npm run build`,
-`npm run preview` (serves the production build at http://localhost:4173).
+`npm run preview` (serves the production build at http://localhost:4173),
+`npm run profile` (simulation profiler on a fully built map; see
+`ARCHITECTURE.md`, "Performance").
 
 ## Build and deploy as a static site
 
@@ -68,7 +71,8 @@ N/L/V/M power stations and storage, J/K water mains, 9/0 intake and treatment
 works, -/= reservoir and water tower, C booster, Y sewage works, O / Shift+O
 cycle the map overlays (power, water pressure, wastewater, traffic, roadworks,
 condition, service cover, pollution, land value), ; plan maintenance,
-Shift+1/2/3 depots, ` incident inbox, Shift+B budget, Shift+N city panel,
+Shift+1/2/3 depots, Shift+4–0 public services, Shift+S/C/H/U/E landmarks,
+` incident inbox, Shift+B budget, Shift+N city panel,
 Shift+D dashboard, B bulldoze, Space pause, Ctrl+S saves, F10 main menu.
 
 ## Docs

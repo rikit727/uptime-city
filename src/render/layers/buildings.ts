@@ -55,7 +55,9 @@ export class BuildingLayer {
   /** Body materials, greyed out while an overlay is shown. */
   private readonly bodyMaterials: MeshLambertMaterial[] = [];
   private dim = false;
+  /** Revisions the bodies and the window bands were last built for. */
   private builtKey = '';
+  private windowsKey = '';
   private lastBuild = -Infinity;
 
   constructor(width: number, height: number) {
@@ -91,6 +93,7 @@ export class BuildingLayer {
 
   invalidate(): void {
     this.builtKey = '';
+    this.windowsKey = '';
     this.lastBuild = -Infinity;
   }
 
@@ -111,32 +114,39 @@ export class BuildingLayer {
   }
 
   /**
-   * Rebuild when buildings, supply or the season change (throttled), and set
-   * the window glow for the time of day. `night` is 0 by day and 1 at night.
+   * Rebuild when buildings or the season change, or only the window bands when
+   * supply changes (rolling outages), throttled; and set the window glow for
+   * the time of day. `night` is 0 by day and 1 at night.
    */
   update(snap: SimSnapshot, night: number, dt: number, now: number): void {
     const r = snap.revisions;
-    const key = `${r.building}:${r.supply}:${r.power}:${seasonOf(snap.minute)}`;
+    const key = `${r.building}:${r.power}:${seasonOf(snap.minute)}`;
+    const wkey = `${key}:${r.supply}`;
     if (
-      key !== this.builtKey &&
+      wkey !== this.windowsKey &&
       (this.builtKey === '' || now - this.lastBuild > REBUILD_INTERVAL_MS)
     ) {
+      const full = key !== this.builtKey;
       this.builtKey = key;
+      this.windowsKey = wkey;
       this.lastBuild = now;
-      this.rebuild(snap);
+      this.rebuild(snap, full);
     }
     this.litMaterial.emissiveIntensity = (this.dim ? 0.25 : 0.95) * night;
     this.spinRotors(snap, dt);
   }
 
-  private rebuild(snap: SimSnapshot): void {
+  /** Rebuild the window bands, and the bodies, fields and rotors too when `full`. */
+  private rebuild(snap: SimSnapshot, full: boolean): void {
     const w = snap.world;
-    for (const b of Object.values(this.batches)) b.begin();
+    if (full) {
+      for (const b of Object.values(this.batches)) b.begin();
+      this.rotors.begin();
+      this.fields.begin();
+      this.rotorList = [];
+    }
     this.windowsLit.begin();
     this.windowsDark.begin();
-    this.rotors.begin();
-    this.fields.begin();
-    this.rotorList = [];
     const season = seasonOf(snap.minute);
     for (const b of snap.buildings) {
       const def = buildingDef(b.code);
@@ -145,20 +155,25 @@ export class BuildingLayer {
       const jitter = grown ? grown.heightJitter : 0;
       const vary = 1 + jitter * ((hash(b.id, 99) / 4294967296) * 2 - 1);
       const lit = b.unpoweredMinutes === 0 && b.occupancy > 0.05;
-      if (grown?.fields) {
+      if (full && grown?.fields) {
         const fieldColour = this.colour(BUILDINGS.fieldColours[grown.fields][season]);
         const [fw, fd] = def.footprint;
         for (let dy = 0; dy < fd; dy++)
           for (let dx = 0; dx < fw; dx++)
             this.fields.add((b.y + dy) * w.width + b.x + dx, 0.03, fieldColour);
       }
-      def.parts.forEach((p, k) => this.addPart(b.id, b.x, b.y, def, p, k, vary, lit));
+      def.parts.forEach((p, k) => {
+        if (full) this.addPart(b.id, b.x, b.y, def, p, k, vary);
+        if (p.windows && p.shape !== 'rotor') this.addWindows(b.x, b.y, p, vary, lit);
+      });
     }
-    for (const b of Object.values(this.batches)) b.end();
+    if (full) {
+      for (const b of Object.values(this.batches)) b.end();
+      this.rotors.end();
+      this.fields.end();
+    }
     this.windowsLit.end();
     this.windowsDark.end();
-    this.rotors.end();
-    this.fields.end();
   }
 
   private addPart(
@@ -169,7 +184,6 @@ export class BuildingLayer {
     p: ModelPart,
     k: number,
     vary: number,
-    lit: boolean,
   ): void {
     const colours = Array.isArray(p.colour) ? p.colour : [p.colour];
     const colour = this.colour(colours[hash(id, k) % colours.length]!);
@@ -195,7 +209,14 @@ export class BuildingLayer {
     }
     this.m.makeScale(p.w, h, p.d).setPosition(cx, y0, cz);
     this.batches[p.shape].add(this.m, colour);
-    if (!p.windows) return;
+  }
+
+  /** Window bands round a part: lit at night while the building has power. */
+  private addWindows(bx: number, by: number, p: ModelPart, vary: number, lit: boolean): void {
+    const y0 = (p.y ?? 0) * vary;
+    const h = p.h * vary;
+    const cx = bx + p.x;
+    const cz = by + p.z;
     const bands = Math.max(1, Math.floor(h / BAND_SPACING));
     const target = lit ? this.windowsLit : this.windowsDark;
     for (let i = 0; i < bands; i++) {

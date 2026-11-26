@@ -65,7 +65,7 @@ export class GameRenderer {
     this.power = new PowerLayer();
     this.water = new WaterLayer();
     this.crews = new CrewLayer();
-    this.traffic = new TrafficLayer(mapWidth);
+    this.traffic = new TrafficLayer();
     this.preview = new PreviewLayer(mapWidth, mapHeight);
     this.overlayLayer = new OverlayLayer(mapWidth * mapHeight);
     this.scene.add(

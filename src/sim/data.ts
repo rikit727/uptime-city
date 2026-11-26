@@ -811,7 +811,13 @@ const allFacilities: AnyFacilityDef[] = [
   ...SERVICES.facilities,
 ];
 const allBuildings: BuildingDef[] = [...BUILDINGS.types, ...allFacilities];
-const buildingByCode = indexBy(allBuildings, (b) => b.code);
+const buildingByCodeMap = indexBy(allBuildings, (b) => b.code);
+/** Dense code -> def table: buildingDef is on every hot path, and codes are small. */
+const buildingByCodeArr: (BuildingDef | undefined)[] = [];
+for (const [code, def] of buildingByCodeMap) buildingByCodeArr[code] = def;
+const buildingByCode = {
+  get: (code: number): BuildingDef | undefined => buildingByCodeArr[code],
+};
 indexBy(allBuildings, (b) => b.id);
 const facilityById = indexBy<AnyFacilityDef, string>(allFacilities, (f) => f.id);
 const mainById = indexBy(WATER.mains, (m) => m.id);

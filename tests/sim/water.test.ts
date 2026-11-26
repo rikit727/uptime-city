@@ -10,7 +10,9 @@ import { MINUTES_PER_DAY } from '../../src/sim/time';
 import {
   finishRound,
   irrigationLps,
+  linksOf,
   serviceTile,
+  sewerTile,
   solveNetwork,
   waterFactors,
 } from '../../src/sim/water';
@@ -454,5 +456,34 @@ describe('water determinism', () => {
     a.step(500);
     loaded.step(500);
     expect(loaded.hash()).toBe(a.hash());
+  });
+});
+
+describe('cached water connections', () => {
+  const ok = (r: { ok: boolean; reason?: string }) => {
+    if (!r.ok) throw new Error(r.reason);
+  };
+  it('match the ring searches and are dropped when roads or mains change', () => {
+    const sim = testSim();
+    ok(
+      sim.dispatch({
+        type: 'buildRoad',
+        roadClass: 'local',
+        from: { x: 10, y: 20 },
+        to: { x: 30, y: 20 },
+      }),
+    );
+    const s = sim.state;
+    const b = addBuilding(s, codeOf('apartmentBlock'), 20, 21, 1);
+    const def = grown('apartmentBlock');
+    const l = linksOf(s, b, def);
+    expect(l.service).toBe(serviceTile(s.world, b, def));
+    expect(l.sewer).toBe(sewerTile(s.world, b, def));
+    expect(l.service).toBeGreaterThanOrEqual(0);
+    expect(s.cache.water.links.has(b.id)).toBe(true);
+    // Bulldozing the road (and the main under it) clears the cache; the new answer is none.
+    ok(sim.dispatch({ type: 'bulldoze', from: { x: 10, y: 20 }, to: { x: 30, y: 20 } }));
+    expect(s.cache.water.links.size).toBe(0);
+    expect(linksOf(s, b, def).service).toBe(-1);
   });
 });

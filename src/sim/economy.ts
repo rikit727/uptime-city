@@ -14,9 +14,10 @@
  * automatic maintenance allowance and how fast assets decay (an underfunded
  * department's assets wear faster).
  *
- * Automatic maintenance (daily at `autoMaintenance.hour`): each utility
- * department raises planned maintenance (night works on roads) on its worst
- * assets below `belowCondition`, while its allowance lasts. The rest of the
+ * Automatic maintenance (daily from :30 past `autoMaintenance.hour`, one
+ * department a minute: roads, water, power): each utility department raises
+ * planned maintenance (night works on roads) on its worst assets below
+ * `belowCondition`, while its allowance lasts. The rest of the
  * backlog is the player's to book or leave.
  *
  * Months are 30 days. At the end of a month loan interest and repayments are
@@ -180,11 +181,18 @@ export function backlog(state: SimState, crew: CrewType, below: number): AssetRe
   return found.map((f) => f.ref);
 }
 
-/** Daily automatic maintenance within each utility department's allowance. */
-export function autoMaintenance(state: SimState): number {
+const AUTO_CREWS = ['roads', 'water', 'power'] as const;
+
+/**
+ * Daily automatic maintenance within each utility department's allowance (all
+ * three, or one: the economy system books one department a minute from :30 so
+ * the work is spread over three ticks).
+ */
+export function autoMaintenance(state: SimState, only?: (typeof AUTO_CREWS)[number]): number {
   const w = state.world;
   let raised = 0;
-  for (const crew of ['roads', 'water', 'power'] as const) {
+  for (const crew of AUTO_CREWS) {
+    if (only !== undefined && crew !== only) continue;
     const dept = deptOfCrew(crew);
     let allowance = ECONOMY.departments[dept].maintenancePerDay * state.economy.budgets[dept];
     if (allowance <= 0) continue;
@@ -293,8 +301,8 @@ export function tickEconomy(state: SimState, emit: Emit): boolean {
     settleHour(state);
     crews = reconcileCrews(state);
   }
-  if (state.minute % MINUTES_PER_DAY === ECONOMY.autoMaintenance.hour * MINUTES_PER_HOUR + 30) {
-    autoMaintenance(state);
-  }
+  const auto =
+    (state.minute % MINUTES_PER_DAY) - (ECONOMY.autoMaintenance.hour * MINUTES_PER_HOUR + 30);
+  if (auto >= 0 && auto < AUTO_CREWS.length) autoMaintenance(state, AUTO_CREWS[auto]);
   return crews;
 }

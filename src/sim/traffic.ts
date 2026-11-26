@@ -33,6 +33,11 @@ import { emptyTripTable, trafficCellsAcross } from './state';
 import type { SimState, TripTable } from './state';
 import { hourOf } from './time';
 import type { WorldState } from './world';
+import { MinHeap } from './routing';
+import { trafficGraphFor } from './trafficGraph';
+import type { TrafficGraph } from './trafficGraph';
+
+const OUTBOUND = TRIP_PURPOSES.indexOf('outbound');
 
 /** `traffic.pending` holds flows in 1/PENDING_SCALE PCU/h so it stays integer. */
 export const PENDING_SCALE = 16;
@@ -123,11 +128,13 @@ export function refreshTrafficTimes(state: SimState): void {
     const slow = cap > 0 ? bprFactor(flow, cap) : bprFactor(flow, cls.capacityVehPerHour);
     tc.crewSlow[t] = Math.min(maxSlow, slow);
   }
+  tc.timesVersion++;
 }
 
 /** Rebuild everything derived for traffic: segments, travel times and permit clashes. */
 export function rebuildTraffic(state: SimState): void {
   state.cache.traffic.access.clear();
+  state.cache.traffic.graph = null;
   rebuildSegments(state);
   refreshTrafficTimes(state);
   rebuildClashes(state);
@@ -265,111 +272,51 @@ export function buildCellTable(state: SimState, hour: number): TripTable {
 
 // ---- assignment -------------------------------------------------------------------
 
-/**
- * Allocation-free binary min-heap of (cost, tile) on typed arrays; ties pop the
- * lower tile first, so searches are deterministic.
- */
-class TileHeap {
-  private c = new Float64Array(1024);
-  private t = new Int32Array(1024);
-  size = 0;
-  /** Cost of the tile returned by the last pop(). */
-  cost = 0;
-  clear(): void {
-    this.size = 0;
-  }
-  push(cost: number, tile: number): void {
-    if (this.size === this.c.length) {
-      const c = new Float64Array(this.size * 2);
-      const t = new Int32Array(this.size * 2);
-      c.set(this.c);
-      t.set(this.t);
-      this.c = c;
-      this.t = t;
-    }
-    const { c, t } = this;
-    let i = this.size++;
-    while (i > 0) {
-      const p = (i - 1) >> 1;
-      const cp = c[p]!;
-      if (cp < cost || (cp === cost && t[p]! < tile)) break;
-      c[i] = cp;
-      t[i] = t[p]!;
-      i = p;
-    }
-    c[i] = cost;
-    t[i] = tile;
-  }
-  pop(): number {
-    const { c, t } = this;
-    const top = t[0]!;
-    this.cost = c[0]!;
-    const len = --this.size;
-    if (len > 0) {
-      const lc = c[len]!;
-      const lt = t[len]!;
-      let i = 0;
-      for (;;) {
-        const l = 2 * i + 1;
-        if (l >= len) break;
-        const r = l + 1;
-        let k = l;
-        if (r < len && (c[r]! < c[l]! || (c[r] === c[l] && t[r]! < t[l]!))) k = r;
-        const ck = c[k]!;
-        if (ck > lc || (ck === lc && t[k]! > lt)) break;
-        c[i] = ck;
-        t[i] = t[k]!;
-        i = k;
-      }
-      c[i] = lc;
-      t[i] = lt;
-    }
-    return top;
-  }
-}
-
 /** Reusable search buffers (not state: fully reinitialised per search via stamps). */
 interface Scratch {
-  n: number;
+  nodes: number;
   stamp: number;
   seen: Int32Array;
   done: Int32Array;
   cost: Float64Array;
   free: Float64Array;
   flow: Float64Array;
+  /** Node -> edge it was reached by (-1 = the origin). */
+  via: Int32Array;
   prev: Int32Array;
   order: Int32Array;
-  heap: TileHeap;
+  heap: MinHeap;
+  /** Per destination cell: gravity weight. */
+  reach: Float64Array;
 }
 let scratch: Scratch | null = null;
 
-function scratchFor(n: number): Scratch {
-  if (!scratch || scratch.n !== n) {
+function scratchFor(nodes: number, cells: number): Scratch {
+  if (!scratch || scratch.nodes < nodes || scratch.reach.length !== cells) {
+    const size = Math.max(nodes, scratch?.nodes ?? 0);
     scratch = {
-      n,
+      nodes: size,
       stamp: 0,
-      seen: new Int32Array(n),
-      done: new Int32Array(n),
-      cost: new Float64Array(n),
-      free: new Float64Array(n),
-      flow: new Float64Array(n),
-      prev: new Int32Array(n),
-      order: new Int32Array(n),
-      heap: new TileHeap(),
+      seen: new Int32Array(size),
+      done: new Int32Array(size),
+      cost: new Float64Array(size),
+      free: new Float64Array(size),
+      flow: new Float64Array(size),
+      via: new Int32Array(size),
+      prev: new Int32Array(size),
+      order: new Int32Array(size),
+      heap: new MinHeap(),
+      reach: new Float64Array(cells),
     };
   }
   return scratch;
 }
 
 /**
- * Shortest-path tree by current travel time from a road tile. Returns how many
- * tiles were settled; `order` lists them in settle order.
+ * Shortest-path tree by current travel time from a node of the junction graph.
+ * Returns how many nodes were settled; `order` lists them in settle order.
  */
-function searchFrom(state: SimState, start: number, s: Scratch): number {
-  const width = state.world.width;
-  const n = s.n;
-  const time = state.cache.traffic.timeSec;
-  const freeSec = state.cache.traffic.freeSec;
+function searchFrom(g: TrafficGraph, start: number, s: Scratch): number {
   s.stamp++;
   if (s.stamp >= 0x7fffffff) {
     s.seen.fill(0);
@@ -377,44 +324,56 @@ function searchFrom(state: SimState, start: number, s: Scratch): number {
     s.stamp = 1;
   }
   const stamp = s.stamp;
-  const { seen, done, cost, free, prev, order, heap, flow } = s;
+  const { seen, done, cost, free, prev, via, order, heap } = s;
+  const { adjStart, adjEdge, edgeA, edgeB, costAB, costBA, freeAB, freeBA } = g;
   heap.clear();
   seen[start] = stamp;
   cost[start] = 0;
   free[start] = 0;
   prev[start] = -1;
+  via[start] = -1;
   heap.push(0, start);
   let settled = 0;
-  // Non-road and closed tiles have an infinite time, so they are never entered.
-  const relax = (t: number, c: number, m: number) => {
-    const tm = time[m]!;
-    if (tm === Infinity) return;
-    const cand = c + tm;
-    if (seen[m] !== stamp || cand < cost[m]!) {
-      seen[m] = stamp;
-      cost[m] = cand;
-      free[m] = free[t]! + freeSec[m]!;
-      prev[m] = t;
-      heap.push(cand, m);
-    }
-  };
   while (heap.size > 0) {
-    const t = heap.pop();
+    const u = heap.pop();
     const c = heap.cost;
-    if (done[t] === stamp || c > cost[t]!) continue;
-    done[t] = stamp;
-    flow[t] = 0;
-    order[settled++] = t;
-    const x = t % width;
-    if (x > 0) relax(t, c, t - 1);
-    if (x < width - 1) relax(t, c, t + 1);
-    if (t >= width) relax(t, c, t - width);
-    if (t + width < n) relax(t, c, t + width);
+    if (done[u] === stamp || c > cost[u]!) continue;
+    done[u] = stamp;
+    order[settled++] = u;
+    for (let k = adjStart[u]!; k < adjStart[u + 1]!; k++) {
+      const e = adjEdge[k]!;
+      // Closed tiles make an edge's cost Infinity, so it is never crossed.
+      let m: number;
+      let ec: number;
+      let ef: number;
+      if (edgeA[e] === u) {
+        m = edgeB[e]!;
+        ec = costAB[e]!;
+        ef = freeAB[e]!;
+      } else {
+        m = edgeA[e]!;
+        ec = costBA[e]!;
+        ef = freeBA[e]!;
+      }
+      if (ec === Infinity) continue;
+      const cand = c + ec;
+      if (seen[m] !== stamp || cand < cost[m]!) {
+        seen[m] = stamp;
+        cost[m] = cand;
+        free[m] = free[u]! + ef;
+        prev[m] = u;
+        via[m] = e;
+        heap.push(cand, m);
+      }
+    }
   }
   return settled;
 }
 
-/** Assign one origin cell's trips. Returns the number of road tiles settled. */
+/**
+ * Assign one origin cell's trips. Returns the work done: road tiles reached by
+ * the search (settled nodes plus the interior tiles of the edges into them).
+ */
 export function assignOrigin(state: SimState, origin: number): number {
   const ts = state.traffic;
   const table = ts.table;
@@ -427,67 +386,87 @@ export function assignOrigin(state: SimState, origin: number): number {
     ts.roundUnserved += total;
     return 0;
   }
-  const s = scratchFor(state.world.width * state.world.height);
-  const settled = searchFrom(state, startTile, s);
-  const { done, cost, free, flow, prev, order, stamp } = s;
+  const g = trafficGraphFor(state, table);
+  const start = g.nodeOf[startTile]!;
+  const s = scratchFor(g.nodeTile.length, cells);
+  const settled = searchFrom(g, start, s);
+  const { done, cost, free, flow, prev, via, order, stamp, reach } = s;
+  const nodeOf = g.nodeOf;
   const tau = TRAFFIC.deterrenceMinutes;
-  // Gravity weights over reachable destination cells.
-  const reach = new Float64Array(cells);
-  const sums: Record<TripPurpose, number> = {
-    outbound: 0,
-    return: 0,
-    freight: 0,
-    farm: 0,
-    eventIn: 0,
-    eventOut: 0,
-  };
-  for (let j = 0; j < cells; j++) {
-    const d = table.load[j]!;
-    if (j === origin || d < 0 || done[d] !== stamp) continue;
-    const f = Math.exp(-cost[d]! / 60 / tau);
-    reach[j] = f;
-    for (const p of TRIP_PURPOSES) sums[p] += table.attr[p][j]! * f;
+  // Purposes with trips from this origin.
+  const NP = TRIP_PURPOSES.length;
+  const prodAt = new Float64Array(NP);
+  const sums = new Float64Array(NP);
+  const attrs: Float64Array[] = [];
+  for (let k = 0; k < NP; k++) {
+    const p = TRIP_PURPOSES[k]!;
+    prodAt[k] = table.prod[p][origin]!;
+    attrs.push(table.attr[p]);
   }
+  // Gravity weights over reachable destination cells.
+  for (let j = 0; j < cells; j++) {
+    reach[j] = 0;
+    const d = table.load[j]!;
+    if (j === origin || d < 0) continue;
+    const dn = nodeOf[d]!;
+    if (dn < 0 || done[dn] !== stamp) continue;
+    const f = Math.exp(-cost[dn]! / 60 / tau);
+    reach[j] = f;
+    for (let k = 0; k < NP; k++) if (prodAt[k]! > 0) sums[k] = sums[k]! + attrs[k]![j]! * f;
+  }
+  for (let k = 0; k < settled; k++) flow[order[k]!] = 0;
   let trips = 0;
   let minutes = 0;
   let freeMinutes = 0;
   let commuteTrips = 0;
   let commuteMinutes = 0;
-  for (const p of TRIP_PURPOSES) {
-    if (table.prod[p][origin]! > 0 && sums[p] <= 0) ts.roundUnserved += table.prod[p][origin]!;
+  for (let k = 0; k < NP; k++) {
+    if (prodAt[k]! > 0 && sums[k]! <= 0) ts.roundUnserved += prodAt[k]!;
   }
   for (let j = 0; j < cells; j++) {
     const f = reach[j]!;
     if (f <= 0) continue;
-    const d = table.load[j]!;
+    const dn = nodeOf[table.load[j]!]!;
+    const c = cost[dn]!;
     let t = 0;
-    for (const p of TRIP_PURPOSES) {
-      const P = table.prod[p][origin]!;
-      if (P <= 0 || sums[p] <= 0) continue;
-      const v = (P * table.attr[p][j]! * f) / sums[p];
+    for (let k = 0; k < NP; k++) {
+      const P = prodAt[k]!;
+      if (P <= 0 || sums[k]! <= 0) continue;
+      const v = (P * attrs[k]![j]! * f) / sums[k]!;
       t += v;
-      if (p === 'outbound') {
+      if (k === OUTBOUND) {
         commuteTrips += v;
-        commuteMinutes += (v * cost[d]!) / 60;
+        commuteMinutes += (v * c) / 60;
       }
     }
     if (t <= 0) continue;
-    flow[d] = flow[d]! + t;
+    flow[dn] = flow[dn]! + t;
     trips += t;
-    minutes += (t * cost[d]!) / 60;
-    freeMinutes += (t * free[d]!) / 60;
+    minutes += (t * c) / 60;
+    freeMinutes += (t * free[dn]!) / 60;
   }
-  // Push flows back up the tree to the origin.
-  for (let k = settled - 1; k > 0; k--) {
-    const t = order[k]!;
-    const v = flow[t]!;
-    if (v > 0) flow[prev[t]!] = flow[prev[t]!]! + v;
-  }
+  // Push flows back up the tree to the origin, loading each edge's tiles on the way.
   const pending = ts.pending;
-  for (let k = 0; k < settled; k++) {
-    const t = order[k]!;
-    const v = Math.round(flow[t]! * PENDING_SCALE);
-    if (v > 0) pending[t] = Math.min(0xffffffff, pending[t]! + v);
+  const { nodeTile, edgeStart, edgeTiles } = g;
+  let work = settled;
+  for (let k = settled - 1; k >= 0; k--) {
+    const u = order[k]!;
+    const e = via[u]!;
+    if (e >= 0) work += edgeStart[e + 1]! - edgeStart[e]!;
+    const q = flow[u]!;
+    if (q <= 0) continue;
+    const v = Math.round(q * PENDING_SCALE);
+    if (v > 0) {
+      const tu = nodeTile[u]!;
+      pending[tu] = Math.min(0xffffffff, pending[tu]! + v);
+      if (e >= 0) {
+        for (let i = edgeStart[e]!; i < edgeStart[e + 1]!; i++) {
+          const t = edgeTiles[i]!;
+          pending[t] = Math.min(0xffffffff, pending[t]! + v);
+        }
+      }
+    }
+    if (e >= 0) flow[prev[u]!] = flow[prev[u]!]! + q;
   }
   ts.roundTrips += trips;
   ts.roundTripMinutes += minutes;
@@ -497,7 +476,7 @@ export function assignOrigin(state: SimState, origin: number): number {
   } else if (table.prod.outbound[origin]! <= 0 && table.attr.return[origin]! <= 0) {
     ts.commute[origin] = 0;
   }
-  return settled;
+  return work;
 }
 
 /** End of a round: blend the new flows in, record road loading and the city figures. */

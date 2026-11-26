@@ -12,6 +12,7 @@ import {
   ledgerIncome,
   loanPayment,
   settleHour,
+  tickEconomy,
 } from '../../src/sim/economy';
 import { computeDemand } from '../../src/sim/growth';
 import { landValueOf } from '../../src/sim/pollution';
@@ -221,5 +222,35 @@ describe('loans and monthly accounts', () => {
     expect(events).toContain('monthClosed');
     expect(s.economy.history[0]!.month).toBe(1);
     expect(s.economy.lastMonth).not.toBeNull();
+  });
+});
+
+describe('automatic maintenance schedule', () => {
+  it('books one department a minute from :30, so no tick carries all three', () => {
+    const sim = testSim();
+    ok(
+      sim.dispatch({
+        type: 'buildRoad',
+        roadClass: 'local',
+        from: { x: 5, y: 20 },
+        to: { x: 40, y: 20 },
+      }),
+    );
+    ok(sim.dispatch({ type: 'placeFacility', facility: 'roadsDepot', at: { x: 10, y: 18 } }));
+    ok(sim.dispatch({ type: 'placeFacility', facility: 'waterDepot', at: { x: 20, y: 18 } }));
+    const s = sim.state;
+    for (let x = 5; x <= 40; x++) {
+      s.world.condition.road[at(sim, x, 20)] = 3000;
+      s.world.condition.main[at(sim, x, 20)] = 3000;
+    }
+    const orders = (crew: string) => s.workOrders.filter((o) => o.crew === crew).length;
+    const start = MINUTES_PER_DAY + ECONOMY.autoMaintenance.hour * 60 + 30;
+    s.minute = start;
+    tickEconomy(s, () => {});
+    expect(orders('roads')).toBeGreaterThan(0);
+    expect(orders('water')).toBe(0);
+    s.minute = start + 1;
+    tickEconomy(s, () => {});
+    expect(orders('water')).toBeGreaterThan(0);
   });
 });
