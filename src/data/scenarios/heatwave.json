@@ -1,0 +1,110 @@
+{
+  "id": "heatwave",
+  "name": "Heatwave",
+  "summary": "Five days of fierce heat: homes and farms want far more water. Keep the taps running without breaching the abstraction licence.",
+  "briefing": [
+    "A heatwave is forecast for the next five days, and the river authority has issued a drought order: the town may take only 3 Ml a day from the river, and no new intakes will be licensed.",
+    "Keep at least 99% of customers supplied on average, and do not take more than the licence allows. Gardens, showers and cooling push household demand up, and farms on the mains are irrigating hard.",
+    "Your levers: water restrictions in the budget panel (Shift+B): a hosepipe ban, or a ban on irrigation from the mains as well (residents and farmers will not like either), and storage: the water tower covers the peaks, and more storage gives you time if anything fails. Press O for the pressure overlay."
+  ],
+  "seed": 4127,
+  "start": {
+    "year": 8,
+    "season": "summer",
+    "day": 4,
+    "hour": 6
+  },
+  "durationHours": 120,
+  "rules": {
+    "weatherEvents": false,
+    "fires": false,
+    "difficulty": "normal",
+    "licenceFactor": 0.125
+  },
+  "startingCash": 250000,
+  "constraints": {
+    "noLoans": true,
+    "capitalLimit": 150000,
+    "noNewFacilities": ["intake"],
+    "noNewFacilitiesReason": "No new abstraction licences are being granted while the drought order is in force."
+  },
+  "city": {
+    "blocksAlong": 7,
+    "blocksAcross": 5,
+    "zoneMix": {
+      "residential": 0.6,
+      "commercial": 0.12,
+      "office": 0.08,
+      "industrial": 0.2
+    },
+    "farms": 5,
+    "occupancy": [0.75, 1],
+    "ageYears": [2, 14],
+    "condition": [70, 95],
+    "facilities": [
+      "roadsDepot",
+      "waterDepot",
+      "powerDepot",
+      "fireStation",
+      "policeStation",
+      "healthCentre",
+      "school",
+      "wasteDepot",
+      "recyclingCentre",
+      "landfill"
+    ],
+    "gasPlants": 1,
+    "extraIntakes": 0,
+    "storage": "waterTower"
+  },
+  "objectives": [
+    {
+      "id": "supply",
+      "kind": "supplyShare",
+      "label": "Customers with water (average)",
+      "target": 0.99,
+      "points": 500
+    },
+    {
+      "id": "licence",
+      "kind": "noLicenceBreach",
+      "label": "Stay within the abstraction licence",
+      "target": 0,
+      "points": 300
+    },
+    {
+      "id": "budget",
+      "kind": "budget",
+      "label": "Spending",
+      "target": 230000,
+      "points": 200
+    }
+  ],
+  "events": [
+    {
+      "afterHours": 0,
+      "kind": "weather",
+      "event": "heatwave",
+      "days": 5
+    },
+    {
+      "afterHours": 0,
+      "kind": "message",
+      "tone": "warn",
+      "text": "Heatwave and drought order: 3 Ml a day from the river. Demand for water will climb every afternoon."
+    },
+    {
+      "afterHours": 56,
+      "kind": "failures",
+      "target": "treatmentWorks",
+      "tone": "error",
+      "text": "The treatment works has tripped out in the heat. Until a water crew fixes it, only storage keeps the taps running."
+    },
+    {
+      "afterHours": 80,
+      "kind": "message",
+      "tone": "info",
+      "text": "Two days to go. Farms are at peak irrigation: watch the abstraction figures on the water chip."
+    }
+  ]
+}

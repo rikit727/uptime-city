@@ -52,6 +52,7 @@ import type {
   WaterFacilityDef,
 } from '../sim';
 import { clear, h } from './dom';
+import { fireMeasureButtons } from './fireMeasures';
 import { formatInt, formatMW, formatMoney } from './format';
 import { crewLabel, formatDuration } from './inbox';
 
@@ -410,6 +411,7 @@ export class Inspector {
     const f = snap.city.fireAt(b.id);
     if (!f) return;
     const engines = snap.city.enginesOnSite(f);
+    this.buttons.push(fireMeasureButtons(snap, f, (c) => this.actions.dispatch(c)));
     rows.push([
       'Fire',
       `${Math.round(f.intensity)}% of the building alight, ${engines} engine${engines === 1 ? '' : 's'} on site${engines > 0 ? `, water ${Math.round(snap.city.fireWater(f) * 100)}%` : ''}`,

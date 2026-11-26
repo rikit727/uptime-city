@@ -14,6 +14,7 @@ import type {
   RoadClassId,
   TileCoord,
   ZoneId,
+  FireMeasure,
 } from '../types';
 
 export interface BuildRoadCommand {
@@ -147,6 +148,20 @@ export interface PrepareEventCommand {
   measure: EventMeasure;
 }
 
+/** Order an emergency measure at a fire: isolate power, cordon the roads, evacuate. */
+export interface FireMeasureCommand {
+  type: 'fireMeasure';
+  /** Fire id. */
+  fire: number;
+  measure: FireMeasure;
+}
+
+/** Water use restrictions: 0 none, 1 hosepipe ban, 2 hosepipe ban and irrigation ban. */
+export interface SetWaterRestrictionCommand {
+  type: 'setWaterRestriction';
+  level: number;
+}
+
 export type Command =
   | BuildRoadCommand
   | ZoneCommand
@@ -164,7 +179,9 @@ export type Command =
   | SetTaxRateCommand
   | TakeLoanCommand
   | RepayLoanCommand
-  | PrepareEventCommand;
+  | PrepareEventCommand
+  | FireMeasureCommand
+  | SetWaterRestrictionCommand;
 export type CommandType = Command['type'];
 
 /**

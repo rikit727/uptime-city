@@ -49,7 +49,13 @@ src/
     ledger.ts        Cash in and out on lines of the month's accounts; budget decay factor
     happiness.ts     The residents round (taxes and happiness, sliced), hourly complaint checks
     complaints.ts    Street names and the complaints feed
-    cityView.ts      Read-only city questions for the UI (service levels, land value, ...)
+    cityView.ts      Read-only city questions for the UI (service levels, land value, overlays,
+                     scenario objectives, ...)
+    overlays.ts      Per-tile values for the map overlays (power, wastewater, roadworks,
+                     condition, service cover, air, noise, land value)
+    kpis.ts          Daily KPI history for the dashboard (midnight records, 5-minute peaks)
+    cityGen.ts       Seeded city generator for scenarios (grid, zones, utilities, buildings, ages)
+    scenario.ts      Scenarios: creation, timed events, objectives and score, constraints
     cache.ts         rebuildCache(): derived indexes recomputed from saved state
     events.ts        SimEvent union (notifications out of the sim)
     serialize.ts     SimState <-> JSON body (RLE tile layers)
@@ -58,7 +64,7 @@ src/
                      (roads, zoning, bulldoze, facilities: power, water and depots, power lines,
                      water mains, assets: maintenance with permits, work order priority, crews,
                      bottled water, combining permits, budgets, tax rates, loans, event
-                     preparations)
+                     preparations, fire measures, water restrictions)
     systems/         Per-tick systems and the tick order (systems/index.ts)
   render/          Three.js only. Reads SimSnapshot; never mutates the sim.
     renderer.ts      GameRenderer: scene, layers, picking, invalidate()
@@ -67,7 +73,8 @@ src/
     layers/          terrain (ground, water, grid), roads, zones, buildings (incl.
                      facilities, farm fields, rotors), power (pylons, cables, street
                      lamps), water (pressure overlay), crews (vans, incident markers, work
-                     sites), traffic (cosmetic cars, traffic overlay), preview/cursor; instanceBatch.ts (growable
+                     sites), traffic (cosmetic cars, traffic overlay), overlay (the other tile
+                     overlays, drawn on top), preview/cursor; instanceBatch.ts (growable
                      InstancedMesh), shapes.ts (unit part geometries)
   ui/              HTML/CSS HUD. Talks to the game only through UiActions.
     hud.ts           Top bar, toolbar, status line, modals (saves, help, new game)
@@ -75,6 +82,11 @@ src/
     inbox.ts         Incident inbox: incidents, work orders, roadworks/permit calendar, crews, KPIs
     budget.ts        Budget panel: accounts, department budgets, tax rates, loans, backlog
     cityPanel.ts     City panel: happiness factors, events calendar and preparations, complaints
+    dashboard.ts     KPI dashboard: stat tiles with sparklines, monthly accounts, table view
+    menus.ts         Main menu, sandbox set-up, scenario list and briefing, settings, results
+    overlayMenu.ts   Overlay switcher and legends (from overlays.json)
+    scenarioPanel.ts Scenario objectives box
+    fireMeasures.ts  Fire emergency-measure buttons (inbox and inspector)
     tools.ts         Toolbar tool definitions and shortcuts (data)
     shortcuts.ts     Controls list for the help panel
     toasts.ts, modal.ts, dom.ts, format.ts, styles.css
@@ -92,7 +104,8 @@ src/
   data/            JSON content: game.json, roads.json, zones.json, weather.json,
                    buildings.json, power.json, water.json, growth.json, assets.json, traffic.json,
                    services.json (services, landmarks, events, fire), economy.json, city.json
-                   (pollution, land value, happiness, complaints, street names)
+                   (pollution, land value, happiness, complaints, street names), overlays.json,
+                   scenarios/*.json (one file per scenario)
 tests/             Vitest, mirroring src/ (sim/, platform/, app/)
 scripts/gen-icons.mjs  Generates PWA icons from code
 ```
@@ -174,6 +187,13 @@ applied immediately and logged at the current tick, i.e. before the next tick.
 | 13  | pollution | 6         | :03 each hour: air and noise grids                                                                            |
 | 14  | economy   | 6         | Month start: loans, file accounts. :51: tariffs, fuel, upkeep, wages, crews on duty. 01:30: auto maintenance  |
 | 15  | happiness | 6         | From :10 each hour: residents round (300 buildings per tick: taxes, happiness). :44: complaint checks         |
+| 16  | kpis      | 7         | Midnight: file yesterday's dashboard record. Minute % 5 = 4: sample the day's peaks (off supply, congestion)  |
+| 17  | scenario  | 7         | Scenarios only: timed events when due, objective samples every 15 minutes, a fire put out, the end and score  |
+
+The KPI system runs after incidents reset the day's customer-minutes at midnight and
+after the impact count (tick % 5 = 4), so its samples see this tick's figures. The
+scenario system runs last so its samples and its end see the whole tick; its timed
+events (a forced weather event, a fire, failures) take effect from the next tick.
 
 The hourly M6 steps sit on different minutes, clear of the power dispatch ticks
 (minute % 5 = 0), so no single tick carries two of them. Fire runs after
@@ -510,6 +530,41 @@ for power), low pressure, power cuts, fumes, noise, missing school places, jams,
 missed bins, fires, roadworks clashes and events, with the street named. Each
 has a key and a cooldown, and the feed keeps the newest 40.
 
+### Scenarios, overlays and the dashboard (milestone 7)
+
+- **City generator** (`cityGen.ts`): on the wider bank of the river, a grid of 6×6
+  blocks between roads (avenues every third road, feeder mains under them); blocks
+  from the centre outwards get landmarks, commercial, office, a services block,
+  residential and industry; farms take the outer column. A gas plant on the outer
+  edge feeds a substation in every second block each way through distribution lines
+  along the roads. The waterworks (intake, treatment works, storage, substation)
+  sit in a strip between the city and the river, joined by a feeder main; a sewage
+  works sits beside the last road. Every zoned block is filled with grown buildings;
+  storage starts full; then each asset gets an age and a condition from the given
+  ranges (older, worse). Everything goes through `executeCommand`, from its own RNG
+  stream.
+- **Scenarios** (`scenario.ts`, `src/data/scenarios/`): `createScenarioState` builds the
+  map from the scenario seed, sets the clock and rules, generates the city, warms up
+  for an hour and resets cash and accounts. `state.scenario` holds the start and end,
+  timed events done, spending (all, capital, works), supply samples, licence breach,
+  the fire (building, start, out), smoke, taxes lost, the backlog count and the final
+  score. Objectives are evaluated from those (`evaluateScenario`). Constraints are
+  checked inside `planCommand`, so previews show them.
+- **Fire measures** (`fire.ts`): see the module header and decision 94. Cordon closures
+  are fault bits derived from the fires in `rebuildFaults`; isolation is applied in the
+  power dispatch; evacuated buildings (saved per fire) pay no taxes.
+- **Water restrictions** (`water.restriction`): a hosepipe ban scales household use; an
+  irrigation ban stops farms irrigating from the mains (their exports halve); each costs
+  happiness points.
+- **Overlays** (`overlays.ts`, `overlays.json`): per-tile values for power, wastewater
+  (sewer network inflow ÷ powered works capacity), roadworks (permits and closures),
+  condition (worst asset on the tile; facilities by condition), cover per service kind
+  (road tiles by level, buildings by their service level), air, noise and land value.
+  The renderer's `OverlayLayer` colours them on top of the scene; water pressure and
+  traffic keep their own layers. Rebuilt at most every 500 ms when a layer changes or
+  every 15 game minutes.
+- **KPIs** (`kpis.ts`): see decision 87; the dashboard draws one sparkline per figure.
+
 ### Weather model
 
 Seasonal means in `weather.json` are interpolated with cosine easing between
@@ -529,11 +584,11 @@ Saves are JSON (`platform/saveFormat.ts`), stored in IndexedDB database
 ```jsonc
 {
   "format": "uptime-city-save",
-  "version": 6,
+  "version": 7,
   "meta": { "gameName", "label", "savedAt", "day", "minute", "cash", "seed" },
   "state": {
     "seed": 123, "tick": 0, "minute": 360, "rngState": 987654, "cash": 250000,
-    "rules": { "weatherEvents": true },
+    "rules": { "weatherEvents": true, "fires": true, "difficulty": "normal", "licenceFactor": 1 },
     "world": {
       "width": 128, "height": 128,
       "terrain": [v, run, v, run, ...],   // run-length encoded
@@ -578,7 +633,10 @@ Saves are JSON (`platform/saveFormat.ts`), stored in IndexedDB database
                      "tile": 2580, "key": "out:3:3" }],
     "happiness": { "city": 72.5, "factors": {...}, "complaintPenalty": 1, "cursor": -1,
                    "sumWeight": 0, "sumScore": 0, "sumFactors": {...} },
-    "pollution": { "air": [...], "noise": [...] }                          // RLE, Uint16 ×10
+    "pollution": { "air": [...], "noise": [...] },                         // RLE, Uint16 ×10
+    "kpis": { "today": { "incidents": 3, "cash": 250000, "peakOff": 0, "congestion": 1.02 },
+              "days": [{ "day": 4, "customerMinutes": 1200, "incidents": 1, ... }] },
+    "scenario": null   // or { "id": "heatwave", "startMinute": ..., "status": "running", ... }
   }
 }
 ```
@@ -590,7 +648,8 @@ milestone 4 (asset condition/laid/peak-load layers, building condition, built da
 and peak load, asset state, incidents, work orders, crews); 5 = milestone 5 (traffic
 layer, traffic state and trip table, permits, work order closure/night/permit/combined); 6 =
 milestone 6 (economy, services, fires, events, complaints, happiness, pollution, `rules.fires`,
-event trip purposes).
+event trip purposes); 7 = milestone 7 (`rules.difficulty` and `rules.licenceFactor`, fire
+`measures`/`evacuated`/`smokeExposure`, `water.restriction`, `kpis`, `scenario`).
 The v1 → v2 migration adds empty buildings and lines and default weather. The
 v2 → v3 migration lays a distribution main under every existing road and adds
 zeroed water fields. The v3 → v4 migration gives every existing asset
@@ -599,7 +658,9 @@ incidents, orders and crews. The v4 → v5 migration adds zero flows, an idle tr
 state and no permits; existing work orders on roads keep a full closure without a
 permit. The v5 → v6 migration adds full budgets and standard tax rates, empty
 accounts, services, fires, events and complaints, zero happiness and pollution,
-random fires on, and empty event trips in the traffic round.
+random fires on, and empty event trips in the traffic round. The v6 → v7 migration adds
+standard difficulty, licence factor 1, no water restrictions, no fire measures, an empty
+KPI history (today's incident count taken from the KPIs) and no scenario.
 
 - To change the state shape: bump `CURRENT_SAVE_VERSION` and add
   `MIGRATIONS[oldVersion]` that returns the next version. Migrations run in
@@ -657,93 +718,109 @@ random fires on, and empty event trips in the traffic round.
    ticks, cosmetic cars, closures, planned/reactive roadworks, permits. **Done.**
 6. **Services and economy** — fire/hydrants, police, health, schools, waste,
    landmarks, events calendar, pollution, budgets, loans, happiness, complaints. **Done.**
-7. **UI** — overlays, KPI dashboard, menus and settings, scenarios, polish.
+7. **UI** — overlays, KPI dashboard, menus and settings, scenarios, polish. **Done.**
 8. **Performance and docs** — profiling pass, final documentation review.
 
 ## Decision log
 
-| #   | Milestone | Decision                                                                                                                     | Why                                                                                                                     |
-| --- | --------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| 1   | M1        | TypeScript pinned to ~6.0                                                                                                    | typescript-eslint does not yet support TS 7.                                                                            |
-| 2   | M1        | Roads, zones and density are per-tile `Uint8Array` layers with numeric codes from JSON                                       | Compact, fast to scan, trivially serialisable; codes stay stable for saves.                                             |
-| 3   | M1        | Road drag lays an L-shaped path (longer axis first)                                                                          | Simple, predictable grid tool; straight drags give straight roads.                                                      |
-| 4   | M1        | Roads may cross water as bridges at 5× cost (`roads.json: bridgeCostMultiplier`)                                             | The river splits the map; without bridges half the map is unreachable.                                                  |
-| 5   | M1        | Building a road over zoning removes the zoning; zoning skips roads and water                                                 | Avoids ambiguous tiles. Later, buildings will block roads instead.                                                      |
-| 6   | M1        | Agricultural zoning only within 20 tiles of the map edge (`game.json: agriculturalEdgeBand`)                                 | Spec: farms "towards the map edges". River is kept 24+ tiles from the edges.                                            |
-| 7   | M1        | Commands apply immediately and are logged at the current tick                                                                | Lets the player build while paused; replay applies them before the next tick, so determinism holds.                     |
-| 8   | M1        | Command handlers are split into `plan` (pure) and `apply`                                                                    | One code path for previews and execution, so previews cannot drift.                                                     |
-| 9   | M1        | Save tile layers run-length encoded in JSON                                                                                  | Readable, exportable JSON that stays small (a few KB).                                                                  |
-| 10  | M1        | 1 tile = 25 m                                                                                                                | Gives a 3.2 km map; plausible for a town with farmland at the edges.                                                    |
-| 11  | M1        | Sim runs on the main thread with a 4 ms/frame budget; snapshots share arrays                                                 | Spec allows it for v1; `SimSnapshot` keeps the worker move open.                                                        |
-| 12  | M1        | No main menu yet: the game boots straight into a new random-seed city; New game / Save / Load are in the top bar             | Main menu and settings panel are M7.                                                                                    |
-| 13  | M1        | Hand-written IndexedDB wrapper; `fake-indexeddb` for tests                                                                   | No runtime dependency needed for four keys.                                                                             |
-| 14  | M1        | PWA icons generated by `scripts/gen-icons.mjs` and committed                                                                 | No external art; reproducible.                                                                                          |
-| 15  | M1        | The game keeps running while modals are open                                                                                 | Matches the time controls; the player can pause with Space. Revisit in M7.                                              |
-| 16  | M2        | Calendar: 4 seasons × 30 days = 120-day year, starting in spring                                                             | Seasons long enough to feel (a season is 6 real hours at 1×) without years taking weeks.                                |
-| 17  | M2        | Buildings are a list of records plus a derived tile index (`cache`), not a per-tile layer                                    | Multi-tile footprints, per-building aggregates and stable ids for later incidents and inspection.                       |
-| 18  | M2        | Derived data lives in `SimState.cache`, rebuilt on load; it must be a pure function of saved state                           | Keeps saves small and avoids saving indexes that can drift; determinism holds after load.                               |
-| 19  | M2        | Growth needs zoning, positive demand, a road beside the footprint and an energised substation in range                       | Spec ties growth to utility service. Land value (M6), services (M6) and commutes (M5) join later.                       |
-| 20  | M2        | Roads and re-zoning over grown buildings demolish them (preview shows them orange); facilities block roads/zones             | Spec: building over farmland removes the farm. Facilities are deliberate investments.                                   |
-| 21  | M2        | Power lines may share tiles with roads; they clear zoning and are blocked by grown buildings                                 | Lines along streets are normal; blocking avoids silent demolition by a cheap line drag.                                 |
-| 22  | M2        | Substation feed = min(capacity, weakest line on the best route); no shared line limits                                       | Gives line ratings meaning with a cheap widest-path search instead of a power-flow solver.                              |
-| 23  | M2        | Substation coverage is straight-line distance (radius), not along roads                                                      | Low-voltage distribution is implicit; road-based coverage is reserved for services (M6).                                |
-| 24  | M2        | Load shedding by priority then a rotating rota block (`id % 4`, rotates hourly)                                              | Simple, deterministic rolling outages; hospitals get priority 0 when they arrive in M6.                                 |
-| 25  | M2        | Batteries charge from any spare capacity, renewables first, and discharge after gas                                          | Batteries cover peaks beyond gas capacity; no price model until the economy (M6).                                       |
-| 26  | M2        | Industrial estates connect across one road or line tile; names persist via an anchor tile                                    | Estates have internal roads; anchors keep names stable when estates grow, merge or split.                               |
-| 27  | M2        | Facility jobs count towards total jobs (residential demand) but not to any zone                                              | Power stations employ people without distorting zone demand.                                                            |
-| 28  | M2        | Farm export income is defined (`exportPerDay`) but not paid yet                                                              | Income and costs arrive with the economy in M6.                                                                         |
-| 29  | M2        | `rules.weatherEvents` (default on) is saved now; its sandbox toggle arrives with the menus in M7                             | Spec lists weather events on/off as a sandbox setting; cheap to carry from the start.                                   |
-| 30  | M3        | Every road gets a 150 mm main (in the road's cost); a tool lays 300/600 mm mains on or off road, never downgrading           | Spec: "mains are laid along roads by default". Players upgrade busy routes instead of piping every street.              |
-| 31  | M3        | Sewers are implicit under every road; no sewer tool. Sewage service is not needed for growth (untreated flow is reported)    | Keeps wastewater about capacity and storms; untreated discharge feeds pollution in M6.                                  |
-| 32  | M3        | Pressure: best-head route tree, routed twice, loss per tile = length × (base + k·(flow/capacity)²)                           | Spec's simplified friction-loss model; gives distance and load effects without a hydraulic solver.                      |
-| 33  | M3        | Per-tile pressure is saved (Uint8, whole metres); the solve runs one network per tick with a saved cursor                    | Growth and supply read saved state between solves, so loads mid-round stay deterministic.                               |
-| 34  | M3        | Raw and treated water share the mains: intakes supply works in the same network; output = min(intakes, works)                | One pipe layer is simpler to build and read; no separate raw-water network.                                             |
-| 35  | M3        | Reservoirs and towers start empty, fill from spare output, cover shortfalls, and give head while not empty                   | Storage is earned, not free water; it buffers peaks and outages at the works.                                           |
-| 36  | M3        | A shortfall scales all source heads by (1 − unmet share)²                                                                    | Far ends lose pressure first, as in a real network that cannot keep up.                                                 |
-| 37  | M3        | Boosters: fixed head gain, no backflow into the inlet zone, head fixed by the first feed, constant power load                | Simple zone separation; flow-scaled pump energy would need saving per-pump figures (see roadmap).                       |
-| 38  | M3        | Water facilities draw a constant load at priority 1 (essential) and stop without power                                       | Ties water to power as the spec's interactions require.                                                                 |
-| 39  | M3        | Two licences: public supply (sum of intakes, breach reported not enforced); farm irrigation (city-wide, enforced)            | Heatwave scenario scores licence breaches; farms stopping at the cap is the spec's irrigation rule.                     |
-| 40  | M3        | Growth needs a main at ≥ 15 m beside the plot (farms may use the river); occupancy falls after 4 h without water             | Spec: growth depends on utility service; mirrors the power rule.                                                        |
-| 41  | M3        | Priority water customers are buildings with power priority 0 (a care home now, hospitals in M6)                              | One flag for "critical"; M4 incidents will raise severity and send bottled water.                                       |
-| 42  | M3        | Storm inflow = rain × (road + roof tiles) × 0.1 effective runoff; works rated 30 Ml/day                                      | Most runoff goes to surface-water drains; showers are absorbed, storms overflow a big city's works.                     |
-| 43  | M3        | Water overlay is a simple toggle (O, or click the water chip) with a viridis ramp and a legend                               | Spec overlays arrive in M7; pressure needs to be visible now.                                                           |
-| 44  | M4        | Tile asset condition is a Uint16 layer per utility (×100); facilities keep it on the Building record                         | Small daily losses (0.1 points) need sub-point precision; layers keep per-tile assets cheap to sweep and save.          |
-| 45  | M4        | One sweep visits every tile once a day (`ceil(tiles / 1440)` per tick); facilities decay when their origin tile is visited   | Even, sliced work; no per-asset timers to save.                                                                         |
-| 46  | M4        | Load wear uses the saved peak load since the last visit (main flow, plant output, island line loading)                       | Peak (not instant) load avoids time-of-day bias from where the sweep happens to be; saved so loads stay deterministic.  |
-| 47  | M4        | Line loading is approximated per island as the worst substation load / feed limit                                            | No per-line flows exist (decision 22); the feed limit is set by the weakest line, so it stands in for line loading.     |
-| 48  | M4        | Fault flags are derived from open incidents and on-site work orders (`rebuildFaults`), never saved                           | One source of truth (the incident and order lists); loads rebuild them, so saves cannot disagree.                       |
-| 49  | M4        | A burst main keeps its place in the layout: it receives water, leaks, and passes none on; a crew on site isolates it         | Looped networks keep supply round the burst, branches lose it downstream, with no layout rebuild per burst.             |
-| 50  | M4        | Customers are households (residents / 2.4) or one per business; incident counts are per affected network or island           | Readable numbers for severity and customer-minutes; attribution by network is cheap and close enough.                   |
-| 51  | M4        | Severity = base + customer steps + priority customers (cancelled by bottled water), recomputed every 5 minutes               | Escalates with impact, and gives bottled water a visible effect.                                                        |
-| 52  | M4        | Repairs are paid on completion (cash may go negative); planned maintenance is paid when raised and refunded if cancelled     | Emergency work cannot be refused; planned work is a budget decision.                                                    |
-| 53  | M4        | Automatic dispatch to the nearest free crew by priority; the player can re-prioritise, divert a crew or cancel planned work  | The spec asks for crew assignment in the inbox without forcing micromanagement.                                         |
-| 54  | M4        | Crews drive on all roads (ignoring closures), mobilise for 30 min from the depot, and drive off-road at 8 km/h where needed  | Works crews pass their own closures; mobilisation dominates realistic response times; never deadlocks.                  |
-| 55  | M4        | Incident titles are saved with the incident                                                                                  | The UI can name incidents whose asset has gone, and from the snapshot alone.                                            |
-| 56  | M4        | Maintenance takes the asset out of service while the crew is on site                                                         | Makes planned work a trade-off (a planned interruption), as in real networks; permits and night works are M5.           |
-| 57  | M5        | Trips are aggregated per 8×8-tile cell and loaded at the cell's busiest access tile; intra-cell trips are ignored            | 256 origins keep a full-map round affordable; cells are small (200 m) so short local trips matter little to congestion. |
-| 58  | M5        | Static assignment per round (one shortest-path tree per origin by current times), new flows blended 50% into the saved flows | Cheap and stable; the blend damps route flip-flopping between rounds (a method-of-successive-averages flavour).         |
-| 59  | M5        | A round's trip table and partial flows are saved (`traffic.table`, `traffic.pending`)                                        | Sliced work must continue identically after load; recomputing the table mid-round would read changed buildings.         |
-| 60  | M5        | Flows are two-way PCU/h per tile against the class's two-way capacity                                                        | Tiles carry both directions; directional flows would double the state for little gameplay.                              |
-| 61  | M5        | Return trips are produced by jobs and shops, balanced to the city's outbound total                                           | Gives a believable evening peak without tracking where each morning trip went.                                          |
-| 62  | M5        | Road closures apply while a crew is on site, not for the whole permit slot                                                   | Matches the existing fault model; one closed tile already blocks its segment, so re-routing is the same.                |
-| 63  | M5        | Emergency repairs close one lane on avenues and highways, the whole road on local roads (`roads.json: repairClosure`)        | Realistic traffic management; makes road class matter for disruption.                                                   |
-| 64  | M5        | Night works = permit slot from 20:00 (no other time restriction); ×1.5 cost, ×1.3 duration                                   | Captures the trade-off (light traffic vs cost) without crew shift scheduling.                                           |
-| 65  | M5        | Clashes are flagged and counted, not fined; combining is rewarded with 25% off and quicker resurfacing over a fresh dig      | The economy (and fines) arrive in M6; the reward makes the combine choice worth making now.                             |
-| 66  | M5        | Overlays are exclusive (water or traffic); O cycles them                                                                     | Every letter key was taken; one cycling key scales to the M7 overlay switcher.                                          |
-| 67  | M5        | Crews pay congestion (BPR factor capped at 4×) but not closures                                                              | Spec: congestion slows crews. Capping avoids absurd times on gridlocked tiles.                                          |
-| 68  | M5        | Growth's spawn chance falls from 100% to 25% as a cell's mean commute rises from 15 to 40 minutes                            | Spec: growth depends on commute times; a soft factor avoids hard cut-offs.                                              |
-| 69  | M6        | Service coverage uses free-flow road times (derived, rebuilt with roads and facilities), not congested times                 | Coverage must be a pure function of saved state; congested times change every round and would need saving per kind.     |
-| 70  | M6        | Capacity is shared per facility by nearest-facility catchments; ratios saved hourly                                          | Overloaded stations matter locally without an allocation solver; saving the ratios keeps loads deterministic.           |
-| 71  | M6        | Fire engines are crews (type `fire`) on `firefighting` work orders; fire.ts finishes them                                    | Reuses dispatch, routing through traffic, rendering and the inbox; one order per appliance.                             |
-| 72  | M6        | Firefighting draws from the nearest main as extra network demand; suppression scales with that main's pressure               | The spec's hydrant mechanic falls out of the existing friction-loss solve; neighbours' pressure drops visibly.          |
-| 73  | M6        | Random fires only start in grown buildings; landmarks can burn (scenarios) but are gutted, not removed                       | Removing facilities mid-sim needs crew and layout clean-up; scenarios in M7 start fires directly.                       |
-| 74  | M6        | Event crowds are two trip purposes (eventIn, eventOut) in the normal traffic round                                           | A dedicated purpose sends every trip to the venue under the gravity model; no extra assignment machinery.               |
-| 75  | M6        | Event outcomes are rule-based (police level, preparations), not random                                                       | Predictable cause and effect for the player; no extra RNG draws.                                                        |
-| 76  | M6        | Pollution on a 4×4-tile grid, saved; exponential falloff along rows and columns                                              | Small saves (1,024 values per kind), O(n) spreading, smooth enough for 100 m cells.                                     |
-| 77  | M6        | Land value is computed on demand from cached layout parts and saved grids                                                    | Pure function of saved state; O(1) per lookup for taxes, growth and happiness.                                          |
-| 78  | M6        | Taxes and happiness are collected in one residents round sliced 300 buildings per tick, partial sums saved                   | A full map takes ~15 ms in one go; slicing keeps every tick under 1 ms.                                                 |
-| 79  | M6        | Income settles hourly into cash; the month's ledger is filed every 30 days                                                   | Cash moves smoothly; 30-day months match the season length.                                                             |
-| 80  | M6        | Department budgets set crews on duty, service capacity, an automatic maintenance allowance and decay speed                   | Gives the spec's "sets crew numbers and the maintenance backlog" concrete, visible effects.                             |
-| 81  | M6        | Bins missed by a fixed hash of the building id against the depot's ratio × tipping share                                     | Deterministic partial collection without saving per-building flags.                                                     |
-| 82  | M6        | Street names hash the straight run of road a tile is on                                                                      | Stable names along a street, through junctions, with no saved naming state.                                             |
-| 83  | M6        | Services must have water and power like businesses; without them they serve at half strength                                 | Ties services to the utilities, the game's core.                                                                        |
+| #   | Milestone | Decision                                                                                                                                                                    | Why                                                                                                                               |
+| --- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | M1        | TypeScript pinned to ~6.0                                                                                                                                                   | typescript-eslint does not yet support TS 7.                                                                                      |
+| 2   | M1        | Roads, zones and density are per-tile `Uint8Array` layers with numeric codes from JSON                                                                                      | Compact, fast to scan, trivially serialisable; codes stay stable for saves.                                                       |
+| 3   | M1        | Road drag lays an L-shaped path (longer axis first)                                                                                                                         | Simple, predictable grid tool; straight drags give straight roads.                                                                |
+| 4   | M1        | Roads may cross water as bridges at 5× cost (`roads.json: bridgeCostMultiplier`)                                                                                            | The river splits the map; without bridges half the map is unreachable.                                                            |
+| 5   | M1        | Building a road over zoning removes the zoning; zoning skips roads and water                                                                                                | Avoids ambiguous tiles. Later, buildings will block roads instead.                                                                |
+| 6   | M1        | Agricultural zoning only within 20 tiles of the map edge (`game.json: agriculturalEdgeBand`)                                                                                | Spec: farms "towards the map edges". River is kept 24+ tiles from the edges.                                                      |
+| 7   | M1        | Commands apply immediately and are logged at the current tick                                                                                                               | Lets the player build while paused; replay applies them before the next tick, so determinism holds.                               |
+| 8   | M1        | Command handlers are split into `plan` (pure) and `apply`                                                                                                                   | One code path for previews and execution, so previews cannot drift.                                                               |
+| 9   | M1        | Save tile layers run-length encoded in JSON                                                                                                                                 | Readable, exportable JSON that stays small (a few KB).                                                                            |
+| 10  | M1        | 1 tile = 25 m                                                                                                                                                               | Gives a 3.2 km map; plausible for a town with farmland at the edges.                                                              |
+| 11  | M1        | Sim runs on the main thread with a 4 ms/frame budget; snapshots share arrays                                                                                                | Spec allows it for v1; `SimSnapshot` keeps the worker move open.                                                                  |
+| 12  | M1        | No main menu yet: the game boots straight into a new random-seed city; New game / Save / Load are in the top bar                                                            | Main menu and settings panel are M7.                                                                                              |
+| 13  | M1        | Hand-written IndexedDB wrapper; `fake-indexeddb` for tests                                                                                                                  | No runtime dependency needed for four keys.                                                                                       |
+| 14  | M1        | PWA icons generated by `scripts/gen-icons.mjs` and committed                                                                                                                | No external art; reproducible.                                                                                                    |
+| 15  | M1        | The game keeps running while modals are open                                                                                                                                | Matches the time controls; the player can pause with Space. Revisit in M7.                                                        |
+| 16  | M2        | Calendar: 4 seasons × 30 days = 120-day year, starting in spring                                                                                                            | Seasons long enough to feel (a season is 6 real hours at 1×) without years taking weeks.                                          |
+| 17  | M2        | Buildings are a list of records plus a derived tile index (`cache`), not a per-tile layer                                                                                   | Multi-tile footprints, per-building aggregates and stable ids for later incidents and inspection.                                 |
+| 18  | M2        | Derived data lives in `SimState.cache`, rebuilt on load; it must be a pure function of saved state                                                                          | Keeps saves small and avoids saving indexes that can drift; determinism holds after load.                                         |
+| 19  | M2        | Growth needs zoning, positive demand, a road beside the footprint and an energised substation in range                                                                      | Spec ties growth to utility service. Land value (M6), services (M6) and commutes (M5) join later.                                 |
+| 20  | M2        | Roads and re-zoning over grown buildings demolish them (preview shows them orange); facilities block roads/zones                                                            | Spec: building over farmland removes the farm. Facilities are deliberate investments.                                             |
+| 21  | M2        | Power lines may share tiles with roads; they clear zoning and are blocked by grown buildings                                                                                | Lines along streets are normal; blocking avoids silent demolition by a cheap line drag.                                           |
+| 22  | M2        | Substation feed = min(capacity, weakest line on the best route); no shared line limits                                                                                      | Gives line ratings meaning with a cheap widest-path search instead of a power-flow solver.                                        |
+| 23  | M2        | Substation coverage is straight-line distance (radius), not along roads                                                                                                     | Low-voltage distribution is implicit; road-based coverage is reserved for services (M6).                                          |
+| 24  | M2        | Load shedding by priority then a rotating rota block (`id % 4`, rotates hourly)                                                                                             | Simple, deterministic rolling outages; hospitals get priority 0 when they arrive in M6.                                           |
+| 25  | M2        | Batteries charge from any spare capacity, renewables first, and discharge after gas                                                                                         | Batteries cover peaks beyond gas capacity; no price model until the economy (M6).                                                 |
+| 26  | M2        | Industrial estates connect across one road or line tile; names persist via an anchor tile                                                                                   | Estates have internal roads; anchors keep names stable when estates grow, merge or split.                                         |
+| 27  | M2        | Facility jobs count towards total jobs (residential demand) but not to any zone                                                                                             | Power stations employ people without distorting zone demand.                                                                      |
+| 28  | M2        | Farm export income is defined (`exportPerDay`) but not paid yet                                                                                                             | Income and costs arrive with the economy in M6.                                                                                   |
+| 29  | M2        | `rules.weatherEvents` (default on) is saved now; its sandbox toggle arrives with the menus in M7                                                                            | Spec lists weather events on/off as a sandbox setting; cheap to carry from the start.                                             |
+| 30  | M3        | Every road gets a 150 mm main (in the road's cost); a tool lays 300/600 mm mains on or off road, never downgrading                                                          | Spec: "mains are laid along roads by default". Players upgrade busy routes instead of piping every street.                        |
+| 31  | M3        | Sewers are implicit under every road; no sewer tool. Sewage service is not needed for growth (untreated flow is reported)                                                   | Keeps wastewater about capacity and storms; untreated discharge feeds pollution in M6.                                            |
+| 32  | M3        | Pressure: best-head route tree, routed twice, loss per tile = length × (base + k·(flow/capacity)²)                                                                          | Spec's simplified friction-loss model; gives distance and load effects without a hydraulic solver.                                |
+| 33  | M3        | Per-tile pressure is saved (Uint8, whole metres); the solve runs one network per tick with a saved cursor                                                                   | Growth and supply read saved state between solves, so loads mid-round stay deterministic.                                         |
+| 34  | M3        | Raw and treated water share the mains: intakes supply works in the same network; output = min(intakes, works)                                                               | One pipe layer is simpler to build and read; no separate raw-water network.                                                       |
+| 35  | M3        | Reservoirs and towers start empty, fill from spare output, cover shortfalls, and give head while not empty                                                                  | Storage is earned, not free water; it buffers peaks and outages at the works.                                                     |
+| 36  | M3        | A shortfall scales all source heads by (1 − unmet share)²                                                                                                                   | Far ends lose pressure first, as in a real network that cannot keep up.                                                           |
+| 37  | M3        | Boosters: fixed head gain, no backflow into the inlet zone, head fixed by the first feed, constant power load                                                               | Simple zone separation; flow-scaled pump energy would need saving per-pump figures (see roadmap).                                 |
+| 38  | M3        | Water facilities draw a constant load at priority 1 (essential) and stop without power                                                                                      | Ties water to power as the spec's interactions require.                                                                           |
+| 39  | M3        | Two licences: public supply (sum of intakes, breach reported not enforced); farm irrigation (city-wide, enforced)                                                           | Heatwave scenario scores licence breaches; farms stopping at the cap is the spec's irrigation rule.                               |
+| 40  | M3        | Growth needs a main at ≥ 15 m beside the plot (farms may use the river); occupancy falls after 4 h without water                                                            | Spec: growth depends on utility service; mirrors the power rule.                                                                  |
+| 41  | M3        | Priority water customers are buildings with power priority 0 (a care home now, hospitals in M6)                                                                             | One flag for "critical"; M4 incidents will raise severity and send bottled water.                                                 |
+| 42  | M3        | Storm inflow = rain × (road + roof tiles) × 0.1 effective runoff; works rated 30 Ml/day                                                                                     | Most runoff goes to surface-water drains; showers are absorbed, storms overflow a big city's works.                               |
+| 43  | M3        | Water overlay is a simple toggle (O, or click the water chip) with a viridis ramp and a legend                                                                              | Spec overlays arrive in M7; pressure needs to be visible now.                                                                     |
+| 44  | M4        | Tile asset condition is a Uint16 layer per utility (×100); facilities keep it on the Building record                                                                        | Small daily losses (0.1 points) need sub-point precision; layers keep per-tile assets cheap to sweep and save.                    |
+| 45  | M4        | One sweep visits every tile once a day (`ceil(tiles / 1440)` per tick); facilities decay when their origin tile is visited                                                  | Even, sliced work; no per-asset timers to save.                                                                                   |
+| 46  | M4        | Load wear uses the saved peak load since the last visit (main flow, plant output, island line loading)                                                                      | Peak (not instant) load avoids time-of-day bias from where the sweep happens to be; saved so loads stay deterministic.            |
+| 47  | M4        | Line loading is approximated per island as the worst substation load / feed limit                                                                                           | No per-line flows exist (decision 22); the feed limit is set by the weakest line, so it stands in for line loading.               |
+| 48  | M4        | Fault flags are derived from open incidents and on-site work orders (`rebuildFaults`), never saved                                                                          | One source of truth (the incident and order lists); loads rebuild them, so saves cannot disagree.                                 |
+| 49  | M4        | A burst main keeps its place in the layout: it receives water, leaks, and passes none on; a crew on site isolates it                                                        | Looped networks keep supply round the burst, branches lose it downstream, with no layout rebuild per burst.                       |
+| 50  | M4        | Customers are households (residents / 2.4) or one per business; incident counts are per affected network or island                                                          | Readable numbers for severity and customer-minutes; attribution by network is cheap and close enough.                             |
+| 51  | M4        | Severity = base + customer steps + priority customers (cancelled by bottled water), recomputed every 5 minutes                                                              | Escalates with impact, and gives bottled water a visible effect.                                                                  |
+| 52  | M4        | Repairs are paid on completion (cash may go negative); planned maintenance is paid when raised and refunded if cancelled                                                    | Emergency work cannot be refused; planned work is a budget decision.                                                              |
+| 53  | M4        | Automatic dispatch to the nearest free crew by priority; the player can re-prioritise, divert a crew or cancel planned work                                                 | The spec asks for crew assignment in the inbox without forcing micromanagement.                                                   |
+| 54  | M4        | Crews drive on all roads (ignoring closures), mobilise for 30 min from the depot, and drive off-road at 8 km/h where needed                                                 | Works crews pass their own closures; mobilisation dominates realistic response times; never deadlocks.                            |
+| 55  | M4        | Incident titles are saved with the incident                                                                                                                                 | The UI can name incidents whose asset has gone, and from the snapshot alone.                                                      |
+| 56  | M4        | Maintenance takes the asset out of service while the crew is on site                                                                                                        | Makes planned work a trade-off (a planned interruption), as in real networks; permits and night works are M5.                     |
+| 57  | M5        | Trips are aggregated per 8×8-tile cell and loaded at the cell's busiest access tile; intra-cell trips are ignored                                                           | 256 origins keep a full-map round affordable; cells are small (200 m) so short local trips matter little to congestion.           |
+| 58  | M5        | Static assignment per round (one shortest-path tree per origin by current times), new flows blended 50% into the saved flows                                                | Cheap and stable; the blend damps route flip-flopping between rounds (a method-of-successive-averages flavour).                   |
+| 59  | M5        | A round's trip table and partial flows are saved (`traffic.table`, `traffic.pending`)                                                                                       | Sliced work must continue identically after load; recomputing the table mid-round would read changed buildings.                   |
+| 60  | M5        | Flows are two-way PCU/h per tile against the class's two-way capacity                                                                                                       | Tiles carry both directions; directional flows would double the state for little gameplay.                                        |
+| 61  | M5        | Return trips are produced by jobs and shops, balanced to the city's outbound total                                                                                          | Gives a believable evening peak without tracking where each morning trip went.                                                    |
+| 62  | M5        | Road closures apply while a crew is on site, not for the whole permit slot                                                                                                  | Matches the existing fault model; one closed tile already blocks its segment, so re-routing is the same.                          |
+| 63  | M5        | Emergency repairs close one lane on avenues and highways, the whole road on local roads (`roads.json: repairClosure`)                                                       | Realistic traffic management; makes road class matter for disruption.                                                             |
+| 64  | M5        | Night works = permit slot from 20:00 (no other time restriction); ×1.5 cost, ×1.3 duration                                                                                  | Captures the trade-off (light traffic vs cost) without crew shift scheduling.                                                     |
+| 65  | M5        | Clashes are flagged and counted, not fined; combining is rewarded with 25% off and quicker resurfacing over a fresh dig                                                     | The economy (and fines) arrive in M6; the reward makes the combine choice worth making now.                                       |
+| 66  | M5        | Overlays are exclusive (water or traffic); O cycles them                                                                                                                    | Every letter key was taken; one cycling key scales to the M7 overlay switcher.                                                    |
+| 67  | M5        | Crews pay congestion (BPR factor capped at 4×) but not closures                                                                                                             | Spec: congestion slows crews. Capping avoids absurd times on gridlocked tiles.                                                    |
+| 68  | M5        | Growth's spawn chance falls from 100% to 25% as a cell's mean commute rises from 15 to 40 minutes                                                                           | Spec: growth depends on commute times; a soft factor avoids hard cut-offs.                                                        |
+| 69  | M6        | Service coverage uses free-flow road times (derived, rebuilt with roads and facilities), not congested times                                                                | Coverage must be a pure function of saved state; congested times change every round and would need saving per kind.               |
+| 70  | M6        | Capacity is shared per facility by nearest-facility catchments; ratios saved hourly                                                                                         | Overloaded stations matter locally without an allocation solver; saving the ratios keeps loads deterministic.                     |
+| 71  | M6        | Fire engines are crews (type `fire`) on `firefighting` work orders; fire.ts finishes them                                                                                   | Reuses dispatch, routing through traffic, rendering and the inbox; one order per appliance.                                       |
+| 72  | M6        | Firefighting draws from the nearest main as extra network demand; suppression scales with that main's pressure                                                              | The spec's hydrant mechanic falls out of the existing friction-loss solve; neighbours' pressure drops visibly.                    |
+| 73  | M6        | Random fires only start in grown buildings; landmarks can burn (scenarios) but are gutted, not removed                                                                      | Removing facilities mid-sim needs crew and layout clean-up; scenarios in M7 start fires directly.                                 |
+| 74  | M6        | Event crowds are two trip purposes (eventIn, eventOut) in the normal traffic round                                                                                          | A dedicated purpose sends every trip to the venue under the gravity model; no extra assignment machinery.                         |
+| 75  | M6        | Event outcomes are rule-based (police level, preparations), not random                                                                                                      | Predictable cause and effect for the player; no extra RNG draws.                                                                  |
+| 76  | M6        | Pollution on a 4×4-tile grid, saved; exponential falloff along rows and columns                                                                                             | Small saves (1,024 values per kind), O(n) spreading, smooth enough for 100 m cells.                                               |
+| 77  | M6        | Land value is computed on demand from cached layout parts and saved grids                                                                                                   | Pure function of saved state; O(1) per lookup for taxes, growth and happiness.                                                    |
+| 78  | M6        | Taxes and happiness are collected in one residents round sliced 300 buildings per tick, partial sums saved                                                                  | A full map takes ~15 ms in one go; slicing keeps every tick under 1 ms.                                                           |
+| 79  | M6        | Income settles hourly into cash; the month's ledger is filed every 30 days                                                                                                  | Cash moves smoothly; 30-day months match the season length.                                                                       |
+| 80  | M6        | Department budgets set crews on duty, service capacity, an automatic maintenance allowance and decay speed                                                                  | Gives the spec's "sets crew numbers and the maintenance backlog" concrete, visible effects.                                       |
+| 81  | M6        | Bins missed by a fixed hash of the building id against the depot's ratio × tipping share                                                                                    | Deterministic partial collection without saving per-building flags.                                                               |
+| 82  | M6        | Street names hash the straight run of road a tile is on                                                                                                                     | Stable names along a street, through junctions, with no saved naming state.                                                       |
+| 83  | M6        | Services must have water and power like businesses; without them they serve at half strength                                                                                | Ties services to the utilities, the game's core.                                                                                  |
+| 84  | M7        | Tile overlays are computed in the sim (`overlays.ts`, one number per tile: NaN, a 0..1 ramp position or a category) and coloured from `overlays.json`                       | Testable without a browser; new overlays are mostly data; render and legend share one source.                                     |
+| 85  | M7        | Tile overlays draw on top of the scene (no depth test, 82% opacity) rather than under dimmed buildings                                                                      | Footprint values (power, cover, condition) stay visible from any camera angle.                                                    |
+| 86  | M7        | Water pressure and traffic keep their own layers inside the same switcher                                                                                                   | They draw mains and roads with their own shapes and ramps; no reason to rewrite working code.                                     |
+| 87  | M7        | Daily KPI history (`state.kpis`, 60 days) filed at midnight, peaks sampled every 5 minutes                                                                                  | The dashboard needs trends; cheap, saved, deterministic.                                                                          |
+| 88  | M7        | Scenario cities come from a seeded generator that issues ordinary commands, then fills blocks with grown buildings directly                                                 | Hand-drawn maps are out of scope; commands guarantee the city obeys the player's rules; direct filling is instant.                |
+| 89  | M7        | Scenario start dates sit years into the calendar (e.g. Year 25) so asset ages fit in the 1-based `laid` day layers                                                          | No negative days in Uint16 layers; ages and seasons come out right.                                                               |
+| 90  | M7        | A 60-minute warm-up after generation (power, water, traffic, pollution, the first residents round), then cash and accounts reset                                            | The player starts on a settled city with happiness and pressures already known.                                                   |
+| 91  | M7        | Objectives score up to their points in full when met and in part when missed by a little; all met wins                                                                      | Gives a graded score (the spec's commercial fire asks for one) and a clear win/lose.                                              |
+| 92  | M7        | Scenario files are imported one by one in `data.ts` (not `import.meta.glob`)                                                                                                | The sim type-check runs without Vite's client types; one import line per scenario is acceptable.                                  |
+| 93  | M7        | Heatwave: a drought order (`rules.licenceFactor`) and water restrictions (hosepipe and irrigation bans) instead of enforcing the licence on flows                           | Licences stay reported, not enforced (water model); the player gets real demand-side levers with costs (happiness, farm exports). |
+| 94  | M7        | Fire measures: isolation (else ×0.6 suppression, ×1.25 growth), cordon (road closures; else ×0.85 and onlookers in the smoke), evacuation (no smoke; no taxes while closed) | Gives the commercial fire its trade-offs from the spec with simple, visible effects.                                              |
+| 95  | M7        | Smoke exposure counted in person-minutes every 5 minutes and priced in the fire scenario's final cost                                                                       | Makes evacuation and cordons matter in the score without a casualty model.                                                        |
+| 96  | M7        | The game opens on the main menu; the clock stops while any dialog is open (setting, default on)                                                                             | Supersedes decisions 12 and 15.                                                                                                   |
+| 97  | M7        | Toolbar tools are grouped and one group is open at a time (the active tool's)                                                                                               | 42 tools no longer scroll; shortcuts still reach every tool.                                                                      |
+| 98  | M7        | Side panels push the toasts left and cap the inspector's height while open                                                                                                  | Panels, toasts and the inspector no longer overlap.                                                                               |
+| 99  | M7        | Sandbox difficulty scales failures, decay and taxes (game.json), stored in `rules.difficulty`                                                                               | The spec's sandbox difficulty, data-driven and saved with the game.                                                               |

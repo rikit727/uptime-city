@@ -2,13 +2,24 @@
   "//": "Water supply and wastewater. Facility codes share the building code space (300+ here); main codes are stored in the world's water layer. Never renumber or reuse codes. Flows are litres per second (l/s), volumes megalitres (Ml), pressure metres of head (m). demandCurves are relative hourly factors (00:00 to 23:00), normalised to an average of 1 at load.",
   "solveIntervalMinutes": 5,
   "solveOffset": 2,
-  "pressure": { "goodM": 20, "lowM": 15, "noSupplyM": 5, "maxM": 255 },
-  "overlay": { "rampMaxM": 60, "ramp": ["#440154", "#3b528b", "#21918c", "#5ec962", "#fde725"] },
+  "pressure": {
+    "goodM": 20,
+    "lowM": 15,
+    "noSupplyM": 5,
+    "maxM": 255
+  },
+  "overlay": {
+    "rampMaxM": 60,
+    "ramp": ["#440154", "#3b528b", "#21918c", "#5ec962", "#fde725"]
+  },
   "deficitHeadExponent": 2,
   "connectionRange": 1,
   "outageGraceMinutes": 240,
   "vacantUseFraction": 0.05,
-  "temperature": { "refC": 16, "perDegreeAbove": 0.025 },
+  "temperature": {
+    "refC": 16,
+    "perDegreeAbove": 0.025
+  },
   "demandCurves": {
     "residential": [
       0.35, 0.3, 0.28, 0.28, 0.3, 0.5, 1.2, 1.9, 1.6, 1.1, 0.9, 0.85, 0.9, 0.85, 0.8, 0.85, 1, 1.3,
@@ -32,7 +43,12 @@
     ]
   },
   "irrigation": {
-    "seasonFactor": { "spring": 0.6, "summer": 1.4, "autumn": 0.4, "winter": 0 },
+    "seasonFactor": {
+      "spring": 0.6,
+      "summer": 1.4,
+      "autumn": 0.4,
+      "winter": 0
+    },
     "refC": 15,
     "perDegreeAbove": 0.08,
     "heatwaveFactor": 1.25,
@@ -40,7 +56,10 @@
     "riverRangeTiles": 4,
     "farmLicenceMlPerDay": 1.5
   },
-  "wastewater": { "returnFraction": 0.9, "runoffCoefficient": 0.1 },
+  "wastewater": {
+    "returnFraction": 0.9,
+    "runoffCoefficient": 0.1
+  },
   "mains": [
     {
       "id": "distribution",
@@ -92,8 +111,24 @@
       "cost": 18000,
       "jobs": 2,
       "parts": [
-        { "shape": "box", "x": 1, "z": 1, "w": 1.9, "d": 1.9, "h": 0.05, "colour": "#a9adb0" },
-        { "shape": "box", "x": 0.7, "z": 1, "w": 0.9, "d": 1.2, "h": 0.4, "colour": "#8a99a8" },
+        {
+          "shape": "box",
+          "x": 1,
+          "z": 1,
+          "w": 1.9,
+          "d": 1.9,
+          "h": 0.05,
+          "colour": "#a9adb0"
+        },
+        {
+          "shape": "box",
+          "x": 0.7,
+          "z": 1,
+          "w": 0.9,
+          "d": 1.2,
+          "h": 0.4,
+          "colour": "#8a99a8"
+        },
         {
           "shape": "gable",
           "x": 0.7,
@@ -137,7 +172,15 @@
       "cost": 45000,
       "jobs": 20,
       "parts": [
-        { "shape": "box", "x": 1.5, "z": 1.5, "w": 2.9, "d": 2.9, "h": 0.04, "colour": "#a3a7a9" },
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.5,
+          "w": 2.9,
+          "d": 2.9,
+          "h": 0.04,
+          "colour": "#a3a7a9"
+        },
         {
           "shape": "box",
           "x": 0.85,
@@ -147,7 +190,15 @@
           "h": 0.12,
           "colour": "#4f8fb3"
         },
-        { "shape": "box", "x": 0.85, "z": 2.1, "w": 1.4, "d": 1.3, "h": 0.5, "colour": "#d5d2c8" },
+        {
+          "shape": "box",
+          "x": 0.85,
+          "z": 2.1,
+          "w": 1.4,
+          "d": 1.3,
+          "h": 0.5,
+          "colour": "#d5d2c8"
+        },
         {
           "shape": "cylinder",
           "x": 2.3,
@@ -181,7 +232,15 @@
       "cost": 22000,
       "jobs": 0,
       "parts": [
-        { "shape": "box", "x": 1.5, "z": 1.5, "w": 2.8, "d": 2.8, "h": 0.22, "colour": "#86ad6f" },
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.5,
+          "w": 2.8,
+          "d": 2.8,
+          "h": 0.22,
+          "colour": "#86ad6f"
+        },
         {
           "shape": "box",
           "x": 1.5,
@@ -192,7 +251,15 @@
           "h": 0.06,
           "colour": "#94b97c"
         },
-        { "shape": "box", "x": 2.6, "z": 0.4, "w": 0.4, "d": 0.4, "h": 0.4, "colour": "#b5a58d" }
+        {
+          "shape": "box",
+          "x": 2.6,
+          "z": 0.4,
+          "w": 0.4,
+          "d": 0.4,
+          "h": 0.4,
+          "colour": "#b5a58d"
+        }
       ]
     },
     {
@@ -241,7 +308,15 @@
       "cost": 8000,
       "jobs": 1,
       "parts": [
-        { "shape": "box", "x": 0.5, "z": 0.5, "w": 0.7, "d": 0.55, "h": 0.3, "colour": "#9fb4c7" },
+        {
+          "shape": "box",
+          "x": 0.5,
+          "z": 0.5,
+          "w": 0.7,
+          "d": 0.55,
+          "h": 0.3,
+          "colour": "#9fb4c7"
+        },
         {
           "shape": "gable",
           "x": 0.5,
@@ -266,7 +341,15 @@
       "cost": 40000,
       "jobs": 15,
       "parts": [
-        { "shape": "box", "x": 1.5, "z": 1.5, "w": 2.9, "d": 2.9, "h": 0.04, "colour": "#9a9e98" },
+        {
+          "shape": "box",
+          "x": 1.5,
+          "z": 1.5,
+          "w": 2.9,
+          "d": 2.9,
+          "h": 0.04,
+          "colour": "#9a9e98"
+        },
         {
           "shape": "cylinder",
           "x": 0.8,
@@ -294,8 +377,27 @@
           "h": 0.18,
           "colour": "#748568"
         },
-        { "shape": "box", "x": 2.2, "z": 2.2, "w": 0.9, "d": 0.8, "h": 0.4, "colour": "#c9c0ae" }
+        {
+          "shape": "box",
+          "x": 2.2,
+          "z": 2.2,
+          "w": 0.9,
+          "d": 0.8,
+          "h": 0.4,
+          "colour": "#c9c0ae"
+        }
       ]
     }
-  ]
+  ],
+  "restrictions": {
+    "//": "Water use restrictions (setWaterRestriction): 1 = hosepipe ban (homes use less, residents mind), 2 = also no irrigation from the mains (farms export less).",
+    "hosepipeBan": {
+      "residentialSaving": 0.15,
+      "happinessPenalty": 4
+    },
+    "irrigationBan": {
+      "exportFactor": 0.5,
+      "happinessPenalty": 1
+    }
+  }
 }

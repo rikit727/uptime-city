@@ -20,14 +20,30 @@
  * (water.ts adds it to the network demand), which lowers pressure for the
  * neighbours. A grown building that reaches 100 burns down; one put out is
  * left damaged (occupancy lost in proportion to the worst of the fire).
+ *
+ * Emergency measures (milestone 7, `fireMeasure` command, services.json
+ * `fire.measures`): isolating the building's power (it then gets none, but
+ * firefighters work at full rate and the fire is not fed by live electrics), a
+ * cordon (roads within a radius close so traffic diverts; without one onlookers
+ * slow the work and breathe the smoke) and evacuation (buildings nearby empty:
+ * no smoke exposure, but they pay no taxes until the fire is out). Burning
+ * buildings pay no taxes either. Smoke exposure is counted every 5 minutes.
  */
 import { SERVICES, WATER, buildingDef } from './data';
-import { defOf, removeBuildings } from './buildings';
+import { defOf, jobsOf, removeBuildings, residentsOf } from './buildings';
 import { addComplaint, streetName } from './complaints';
 import type { SimEvent } from './events';
-import { cancelOrder, isOpen, newOrder, openIncident, resolveIncident } from './incidents';
+import {
+  cancelOrder,
+  isOpen,
+  newOrder,
+  openIncident,
+  rebuildFaults,
+  resolveIncident,
+} from './incidents';
 import { crewCount } from './crews';
 import type { Building, Fire, Incident, SimState } from './state';
+import type { FireMeasure } from './types';
 import { accessTile } from './traffic';
 import { MINUTES_PER_HOUR } from './time';
 import type { WorldState } from './world';
@@ -98,6 +114,9 @@ export function startFire(state: SimState, buildingId: number, emit: Emit = noEm
     peak: F.startIntensity,
     incidentId: inc.id,
     firstArrival: -1,
+    measures: [],
+    evacuated: [],
+    smokeExposure: 0,
   };
   state.fires.push(fire);
   state.services.fireKpi.fires++;
@@ -171,6 +190,140 @@ function endFire(state: SimState, f: Fire, outcome: 'cleared' | 'removed', emit:
   }
   if (inc && isOpen(inc)) resolveIncident(state, inc, outcome, emit);
   state.fires = state.fires.filter((x) => x.id !== f.id);
+  if (f.measures.includes('cordon')) rebuildFaults(state);
+}
+
+const M = F.measures;
+
+/** Has this measure been ordered at the fire? */
+export const hasMeasure = (f: Fire, m: FireMeasure): boolean => f.measures.includes(m);
+
+/** Cost of ordering a measure at a fire now. */
+export function fireMeasureCost(state: SimState, f: Fire, m: FireMeasure): number {
+  if (m === 'isolatePower') return M.isolatePower.cost;
+  if (m === 'cordon') return M.cordon.cost;
+  return M.evacuate.costPerBuilding * buildingsNear(state, f, M.evacuate.radiusTiles).length;
+}
+
+/** Ids of buildings (ascending) whose footprint lies within `r` tiles of the burning building's. */
+export function buildingsNear(state: SimState, f: Fire, r: number): number[] {
+  const b = state.cache.byId.get(f.building);
+  if (!b) return [];
+  const [fw, fd] = defOf(b).footprint;
+  const out: number[] = [];
+  for (const o of state.buildings) {
+    const [ow, od] = defOf(o).footprint;
+    const dx = Math.max(0, b.x - (o.x + ow - 1), o.x - (b.x + fw - 1));
+    const dy = Math.max(0, b.y - (o.y + od - 1), o.y - (b.y + fd - 1));
+    if (dx <= r && dy <= r && (residentsOf(o) > 0 || jobsOf(o) > 0 || o.id === b.id))
+      out.push(o.id);
+  }
+  return out;
+}
+
+/** Road tiles closed by cordons round fires (rebuildFaults adds them). */
+export function fireClosures(state: SimState): number[] {
+  const out: number[] = [];
+  const w = state.world;
+  const r = M.cordon.radiusTiles;
+  for (const f of state.fires) {
+    if (!hasMeasure(f, 'cordon')) continue;
+    const b = state.cache.byId.get(f.building);
+    if (!b) continue;
+    const [fw, fd] = defOf(b).footprint;
+    for (let yy = Math.max(0, b.y - r); yy <= Math.min(w.height - 1, b.y + fd - 1 + r); yy++)
+      for (let xx = Math.max(0, b.x - r); xx <= Math.min(w.width - 1, b.x + fw - 1 + r); xx++) {
+        const t = yy * w.width + xx;
+        if (w.road[t] !== 0) out.push(t);
+      }
+  }
+  return out;
+}
+
+/** Is this building's power isolated for firefighting? */
+export const powerIsolated = (state: SimState, buildingId: number): boolean =>
+  state.fires.some((f) => f.building === buildingId && hasMeasure(f, 'isolatePower'));
+
+/** Closed by a fire: burning, or evacuated from one (pays no taxes meanwhile). */
+export function closedByFire(state: SimState, buildingId: number): boolean {
+  for (const f of state.fires) {
+    if (f.building === buildingId) return true;
+    if (f.evacuated.length > 0 && binaryHas(f.evacuated, buildingId)) return true;
+  }
+  return false;
+}
+
+function binaryHas(list: readonly number[], v: number): boolean {
+  let lo = 0;
+  let hi = list.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const x = list[mid]!;
+    if (x === v) return true;
+    if (x < v) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return false;
+}
+
+/** People in a building now (residents plus staff). */
+const peopleIn = (b: Building): number => residentsOf(b) + jobsOf(b);
+
+/** Order an emergency measure at a fire (the command pays for it). */
+export function orderFireMeasure(state: SimState, f: Fire, m: FireMeasure): void {
+  if (hasMeasure(f, m)) return;
+  f.measures = [...f.measures, m].sort(
+    (a, b) => MEASURE_ORDER.indexOf(a) - MEASURE_ORDER.indexOf(b),
+  );
+  const w = state.world;
+  if (m === 'cordon') rebuildFaults(state);
+  if (m === 'evacuate') {
+    f.evacuated = buildingsNear(state, f, M.evacuate.radiusTiles);
+    addComplaint(
+      state,
+      'fire',
+      `evac:${f.id}`,
+      `We've been evacuated from ${streetName(w, f.tile)} because of a fire. How long until we can go home?`,
+      f.tile,
+    );
+  }
+}
+
+const MEASURE_ORDER: readonly FireMeasure[] = ['isolatePower', 'cordon', 'evacuate'];
+
+/** Smoke over the last 5 minutes: person-minutes breathed by people not evacuated. */
+function smokeStep(state: SimState, f: Fire): number {
+  const S = F.smoke;
+  if (f.intensity < S.minIntensity) return 0;
+  const share = f.intensity / 100;
+  let people = 0;
+  for (const id of buildingsNear(state, f, S.radiusTiles)) {
+    if (id === f.building) continue;
+    if (f.evacuated.length > 0 && binaryHas(f.evacuated, id)) continue;
+    const o = state.cache.byId.get(id);
+    if (o) people += peopleIn(o);
+  }
+  if (!hasMeasure(f, 'cordon')) {
+    // Onlookers and passing traffic on the roads round the fire.
+    let pcu = 0;
+    for (const t of roadsNear(state, f, M.cordon.radiusTiles)) pcu += state.world.traffic[t]!;
+    people += (pcu / 60) * M.cordon.peoplePerPcu * 5;
+  }
+  return people * share * 5;
+}
+
+function roadsNear(state: SimState, f: Fire, r: number): number[] {
+  const out: number[] = [];
+  const b = state.cache.byId.get(f.building);
+  if (!b) return out;
+  const w = state.world;
+  const [fw, fd] = defOf(b).footprint;
+  for (let yy = Math.max(0, b.y - r); yy <= Math.min(w.height - 1, b.y + fd - 1 + r); yy++)
+    for (let xx = Math.max(0, b.x - r); xx <= Math.min(w.width - 1, b.x + fw - 1 + r); xx++) {
+      const t = yy * w.width + xx;
+      if (w.road[t] !== 0) out.push(t);
+    }
+  return out;
 }
 
 /** Hourly ignition roll (one roll for the whole city). */
@@ -223,9 +376,32 @@ export function tickFires(state: SimState, emit: Emit): { changed: boolean; buil
       changed = true;
     }
     const root = Math.sqrt(areaOf(b));
-    const growth = (F.growthPerMinute * (1 + f.intensity / F.accelerationAt)) / root;
+    const isolated = hasMeasure(f, 'isolatePower');
+    const growth =
+      ((F.growthPerMinute * (1 + f.intensity / F.accelerationAt)) / root) *
+      (isolated ? 1 : M.isolatePower.liveGrowthFactor);
+    const handicap =
+      (isolated ? 1 : M.isolatePower.liveSuppressionFactor) *
+      (hasMeasure(f, 'cordon') ? 1 : M.cordon.noCordonSuppressionFactor);
     const knock =
-      engines > 0 ? (engines * F.suppressionPerAppliance * waterShare(state, f)) / root : 0;
+      engines > 0
+        ? (engines * F.suppressionPerAppliance * waterShare(state, f) * handicap) / root
+        : 0;
+    if (state.minute % 5 === 0) {
+      const dose = smokeStep(state, f);
+      const before = f.smokeExposure;
+      f.smokeExposure += dose;
+      if (state.scenario) state.scenario.smoke += dose;
+      if (before < F.smoke.complaintExposure && f.smokeExposure >= F.smoke.complaintExposure) {
+        addComplaint(
+          state,
+          'fire',
+          `smoke:${f.id}`,
+          `Thick smoke from the fire on ${streetName(w, f.tile)} is coming into our homes and offices. Why haven't we been told to leave?`,
+          f.tile,
+        );
+      }
+    }
     f.intensity = Math.max(0, Math.min(100, f.intensity + growth - knock));
     f.peak = Math.max(f.peak, f.intensity);
     const sev = severityFor(f.intensity);

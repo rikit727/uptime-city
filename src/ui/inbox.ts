@@ -20,6 +20,7 @@ import {
 import type { Command, Crew, CrewType, Incident, Permit, SimSnapshot, WorkOrder } from '../sim';
 import { clear, h } from './dom';
 import { formatInt, formatMoney } from './format';
+import { fireMeasureButtons } from './fireMeasures';
 
 export interface InboxActions {
   dispatch(cmd: Command): void;
@@ -228,6 +229,10 @@ export class Inbox {
       );
       card.append(b);
     }
+    if (inc.kind === 'fire') {
+      const f = snap.fires.find((x) => x.incidentId === inc.id);
+      if (f) card.append(fireMeasureButtons(snap, f, (c) => this.actions.dispatch(c)));
+    }
     const o = snap.workOrders.find((x) => x.id === inc.orderId);
     if (o) card.append(this.orderControls(snap, o));
     return card;
@@ -248,6 +253,8 @@ export class Inbox {
         return `${crew ? crewLabel(crew) : 'Crew'} ${mob}on site in ${formatDuration(mins)}`;
       }
       case 'onSite':
+        if (o.type === 'firefighting')
+          return `${crew ? crewLabel(crew) : 'Crew'} on site, fighting the fire`;
         return `${crew ? crewLabel(crew) : 'Crew'} on site, done in ${formatDuration(o.startedMinute + o.workMinutes - snap.minute)}`;
     }
   }

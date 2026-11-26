@@ -21,6 +21,8 @@ import type {
   IncidentKind,
   WeatherEventId,
   ZoneId,
+  Difficulty,
+  FireMeasure,
 } from './types';
 import { COVERAGE_KINDS, DEPARTMENTS, TAX_ZONES } from './types';
 import { rebuildCache } from './cache';
@@ -305,11 +307,15 @@ export interface WeatherState {
   event: { id: WeatherEventId; startDay: number; endDay: number } | null;
 }
 
-/** Game rules chosen at new game (sandbox settings; more arrive in M7). */
+/** Game rules chosen at new game (sandbox settings or a scenario). */
 export interface GameRules {
   weatherEvents: boolean;
   /** Random building fires (on by default; scenarios and tests may turn them off). */
   fires: boolean;
+  /** Failure, decay and income multipliers (game.json `difficulty`). */
+  difficulty: Difficulty;
+  /** Multiplies every intake's abstraction licence (1; a scenario's drought order cuts it). */
+  licenceFactor: number;
 }
 
 export interface PowerIslandStats {
@@ -375,6 +381,8 @@ export interface WaterState {
   supplyAlert: boolean;
   /** Some priority customers have no supply. */
   priorityAlert: boolean;
+  /** Water use restrictions: 0 none, 1 hosepipe ban, 2 hosepipe ban and no irrigation from the mains. */
+  restriction: number;
 }
 
 /** One connected group of mains and water facilities (derived from the layout). */
@@ -449,6 +457,12 @@ export interface Fire {
   readonly incidentId: number;
   /** Minute the first engine got there (-1 before). */
   firstArrival: number;
+  /** Emergency measures ordered (in FIRE_MEASURES order). */
+  measures: FireMeasure[];
+  /** Buildings evacuated (ascending id; empty unless `evacuate` was ordered). */
+  evacuated: number[];
+  /** Person-minutes of smoke breathed by people near the fire who were not evacuated. */
+  smokeExposure: number;
 }
 
 export type CityEventStatus = 'booked' | 'live' | 'done';
@@ -630,6 +644,76 @@ export interface ServicesCache {
   roadServices: Float32Array;
 }
 
+/** One day's headline figures for the dashboard (milestone 7). */
+export interface DailyKpi {
+  day: number;
+  /** Customer-minutes without water or power that day. */
+  customerMinutes: number;
+  /** Incidents opened that day. */
+  incidents: number;
+  /** Most buildings without water or power at one time (sampled every 5 minutes). */
+  peakOff: number;
+  /** Mean time to repair, all time, at the end of the day (minutes; -1 before any repair). */
+  mttrMinutes: number;
+  /** Highest congestion index that day. */
+  congestion: number;
+  /** Cash at the end of the day and its change over the day. */
+  cash: number;
+  cashFlow: number;
+  /** City happiness at the end of the day (0..100). */
+  happiness: number;
+  /** Mean fire response time, all time (minutes; -1 before any response). */
+  fireResponse: number;
+}
+
+/** Daily KPI history and today's running figures (saved). */
+export interface KpiState {
+  /** Values at the start of today, and the running peaks. */
+  today: { incidents: number; cash: number; peakOff: number; congestion: number };
+  /** Oldest first, at most `game.json: kpiHistoryDays`. */
+  days: DailyKpi[];
+}
+
+export type ScenarioStatus = 'running' | 'won' | 'lost';
+
+/** A scenario in progress (saved; null in sandbox games). See scenario.ts. */
+export interface ScenarioState {
+  /** Scenario id (src/data/scenarios/<id>.json). */
+  id: string;
+  startMinute: number;
+  /** When it ends (it may end earlier, e.g. a fire scenario once the fire is out). */
+  endMinute: number;
+  status: ScenarioStatus;
+  /** Timed events already run (they are listed in time order). */
+  eventsDone: number;
+  /** Everything spent since the start (all expense lines), and capital spending alone. */
+  spent: number;
+  capitalSpent: number;
+  /** Spending on maintenance and repairs alone. */
+  worksSpent: number;
+  /** Figures at the start, for "since the start" objectives. */
+  base: { repairs: number; repairMinutes: number; customerMinutes: number; cash: number };
+  /** Supply share samples (every 15 minutes): count, sum and the lowest. */
+  supplySamples: number;
+  supplySum: number;
+  supplyMin: number;
+  /** The public supply abstraction licence was breached. */
+  licenceBreached: boolean;
+  /** The scenario's fire: building id, start and the minute it was put out (-1 = none / not yet). */
+  fireBuilding: number;
+  fireStart: number;
+  fireOut: number;
+  /** Smoke exposure (person-minutes) and taxes lost to evacuation and the fire, so far. */
+  smoke: number;
+  taxLost: number;
+  /** Assets below the backlog objective's condition now and at the start (0 without one). */
+  backlog: number;
+  backlogStart: number;
+  /** Final score (0 until the end) and the minute it ended (-1 while running). */
+  score: number;
+  endedMinute: number;
+}
+
 export interface SimCache {
   /** Tile -> building id (0 = none). */
   buildingAt: Int32Array;
@@ -709,6 +793,10 @@ export interface SimState {
   complaints: Complaint[];
   happiness: HappinessState;
   pollution: PollutionState;
+  /** Daily KPI history for the dashboard. */
+  kpis: KpiState;
+  /** The scenario being played, or null in a sandbox game. */
+  scenario: ScenarioState | null;
   /** Derived data; never saved. */
   cache: SimCache;
 }
@@ -719,6 +807,7 @@ export interface NewGameOptions {
   mapSize?: number;
   weatherEvents?: boolean;
   fires?: boolean;
+  difficulty?: Difficulty;
 }
 
 export const emptyDemand = (): Record<ZoneId, number> => ({
@@ -753,6 +842,7 @@ export const initialWaterState = (): WaterState => ({
   spillMl: 0,
   supplyAlert: false,
   priorityAlert: false,
+  restriction: 0,
 });
 
 export const emptyWaterStats = (): WaterStats => ({
@@ -924,6 +1014,11 @@ export const initialHappiness = (): HappinessState => ({
   sumFactors: zeroFactors(),
 });
 
+export const initialKpis = (cash: number): KpiState => ({
+  today: { incidents: 0, cash, peakOff: 0, congestion: 1 },
+  days: [],
+});
+
 /** Pollution grid cells along each side of the map. */
 export const pollutionCellsAcross = (size: number, cellSize: number): number =>
   Math.ceil(size / cellSize);
@@ -1019,7 +1114,12 @@ export function createInitialState(opts: NewGameOptions): SimState {
     minute: GAME.startMinute,
     rng: new Rng(seedState(opts.seed, SIM_STREAM)),
     cash: opts.startingCash ?? GAME.startingCash,
-    rules: { weatherEvents: opts.weatherEvents ?? true, fires: opts.fires ?? true },
+    rules: {
+      weatherEvents: opts.weatherEvents ?? true,
+      fires: opts.fires ?? true,
+      difficulty: opts.difficulty ?? 'normal',
+      licenceFactor: 1,
+    },
     world,
     buildings: [],
     nextBuildingId: 1,
@@ -1042,6 +1142,8 @@ export function createInitialState(opts: NewGameOptions): SimState {
     complaints: [],
     happiness: initialHappiness(),
     pollution: initialPollution(world, CITY.pollution.cellSize),
+    kpis: initialKpis(opts.startingCash ?? GAME.startingCash),
+    scenario: null,
     cache: emptyCache(world),
   };
   initWeather(state);

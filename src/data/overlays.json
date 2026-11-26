@@ -1,0 +1,144 @@
+{
+  "//": "Map overlays (O cycles them; the overlay menu lists them). Ramps run from the low end to the high end and are colour-blind safe (ColorBrewer and viridis families); categories use the Okabe-Ito palette. Water and traffic keep their own ramps in water.json and traffic.json.",
+  "overlays": [
+    {
+      "id": "power",
+      "name": "Power",
+      "group": "Utilities",
+      "categories": [
+        { "colour": "#0072B2", "label": "Powered" },
+        { "colour": "#D55E00", "label": "No power" },
+        { "colour": "#9fcbe8", "label": "In reach of a substation" },
+        { "colour": "#F0E442", "label": "Plant or substation" },
+        { "colour": "#3a3a3a", "label": "Power line" },
+        { "colour": "#CC79A7", "label": "Out of service" }
+      ]
+    },
+    { "id": "water", "name": "Water pressure", "group": "Utilities" },
+    {
+      "id": "wastewater",
+      "name": "Wastewater",
+      "group": "Utilities",
+      "ramp": ["#00224e", "#35456c", "#666970", "#948e77", "#c8b866", "#fee838"],
+      "rampLabels": [
+        [0, "0%"],
+        [0.5, "50%"],
+        [1, "100% of works capacity"]
+      ],
+      "categories": [
+        { "colour": "#D55E00", "label": "Overflowing" },
+        { "colour": "#CC79A7", "label": "No sewage works" }
+      ]
+    },
+    { "id": "traffic", "name": "Traffic", "group": "Roads" },
+    {
+      "id": "roadworks",
+      "name": "Roadworks and permits",
+      "group": "Roads",
+      "categories": [
+        { "colour": "#56B4E9", "label": "Permit booked" },
+        { "colour": "#E69F00", "label": "Works under way" },
+        { "colour": "#CC79A7", "label": "Lane closed" },
+        { "colour": "#3a3a3a", "label": "Road closed" },
+        { "colour": "#D55E00", "label": "Clashing permits" }
+      ]
+    },
+    {
+      "id": "condition",
+      "name": "Asset condition",
+      "group": "Assets",
+      "ramp": ["#d73027", "#fc8d59", "#fee090", "#ffffbf", "#e0f3f8", "#91bfdb", "#4575b4"],
+      "rampLabels": [
+        [0, "0%"],
+        [0.45, "45%"],
+        [1, "100%"]
+      ],
+      "categories": [{ "colour": "#1b1b1b", "label": "Failed or out of service" }]
+    },
+    {
+      "id": "fire",
+      "name": "Fire cover",
+      "group": "Services",
+      "ramp": ["#ffffcc", "#c7e9b4", "#7fcdbb", "#41b6c4", "#1d91c0", "#225ea8", "#0c2c84"],
+      "rampLabels": [
+        [0, "None"],
+        [1, "Full"]
+      ],
+      "categories": [{ "colour": "#bdbdbd", "label": "Out of reach" }]
+    },
+    {
+      "id": "police",
+      "name": "Police cover",
+      "group": "Services",
+      "ramp": ["#ffffcc", "#c7e9b4", "#7fcdbb", "#41b6c4", "#1d91c0", "#225ea8", "#0c2c84"],
+      "rampLabels": [
+        [0, "None"],
+        [1, "Full"]
+      ],
+      "categories": [{ "colour": "#bdbdbd", "label": "Out of reach" }]
+    },
+    {
+      "id": "health",
+      "name": "Health cover",
+      "group": "Services",
+      "ramp": ["#ffffcc", "#c7e9b4", "#7fcdbb", "#41b6c4", "#1d91c0", "#225ea8", "#0c2c84"],
+      "rampLabels": [
+        [0, "None"],
+        [1, "Full"]
+      ],
+      "categories": [{ "colour": "#bdbdbd", "label": "Out of reach" }]
+    },
+    {
+      "id": "school",
+      "name": "School places",
+      "group": "Services",
+      "ramp": ["#ffffcc", "#c7e9b4", "#7fcdbb", "#41b6c4", "#1d91c0", "#225ea8", "#0c2c84"],
+      "rampLabels": [
+        [0, "None"],
+        [1, "Full"]
+      ],
+      "categories": [{ "colour": "#bdbdbd", "label": "Out of reach" }]
+    },
+    {
+      "id": "waste",
+      "name": "Bin collections",
+      "group": "Services",
+      "ramp": ["#ffffcc", "#c7e9b4", "#7fcdbb", "#41b6c4", "#1d91c0", "#225ea8", "#0c2c84"],
+      "rampLabels": [
+        [0, "None"],
+        [1, "Full"]
+      ],
+      "categories": [{ "colour": "#bdbdbd", "label": "Out of reach" }]
+    },
+    {
+      "id": "air",
+      "name": "Air pollution",
+      "group": "Environment",
+      "ramp": ["#ffffe5", "#fee391", "#fec44f", "#fe9929", "#ec7014", "#cc4c02", "#8c2d04"],
+      "rampLabels": [
+        [0, "Clean"],
+        [1, "Bad"]
+      ]
+    },
+    {
+      "id": "noise",
+      "name": "Noise",
+      "group": "Environment",
+      "ramp": ["#f7fcfd", "#bfd3e6", "#9ebcda", "#8c96c6", "#8c6bb1", "#88419d", "#6e016b"],
+      "rampLabels": [
+        [0, "Quiet"],
+        [1, "Loud"]
+      ]
+    },
+    {
+      "id": "landValue",
+      "name": "Land value",
+      "group": "Environment",
+      "ramp": ["#440154", "#443983", "#31688e", "#21918c", "#35b779", "#90d743", "#fde725"],
+      "rampLabels": [
+        [0, "Low"],
+        [1, "High"]
+      ]
+    }
+  ]
+}

@@ -31,6 +31,7 @@ import {
 } from './assets';
 import { availableCrews, crewCount, crewPosition, returnCrew, sendCrew } from './crews';
 import { eventClosures } from './cityEvents';
+import { fireClosures } from './fire';
 import { spend } from './ledger';
 import type { SimEvent } from './events';
 import { rebuildNetwork } from './power';
@@ -112,6 +113,8 @@ export function rebuildFaults(state: SimState): void {
   }
   // Roads beside a venue closed for an event (the player's choice when preparing it).
   for (const t of eventClosures(state)) add(t, FAULT.ROAD_CLOSED);
+  // Cordons round fires (fire.ts emergency measures).
+  for (const t of fireClosures(state)) add(t, FAULT.ROAD_CLOSED);
   // A full closure wins over a lane closure on the same tile.
   for (let t = 0; t < f.tile.length; t++) {
     if (f.tile[t]! & FAULT.ROAD_CLOSED) f.tile[t] = f.tile[t]! & ~FAULT.LANE_CLOSED;

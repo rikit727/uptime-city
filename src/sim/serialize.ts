@@ -44,9 +44,20 @@ import type {
   WaterState,
   WeatherState,
   WorkOrder,
+  DailyKpi,
+  KpiState,
+  ScenarioState,
 } from './state';
 import { CITY } from './data';
-import { CREW_TYPES, DEPARTMENTS, EVENT_MEASURES, INCIDENT_KINDS, TAX_ZONES } from './types';
+import {
+  CREW_TYPES,
+  DEPARTMENTS,
+  DIFFICULTIES,
+  EVENT_MEASURES,
+  FIRE_MEASURES,
+  INCIDENT_KINDS,
+  TAX_ZONES,
+} from './types';
 import type { CityEventType } from './types';
 import { TRIP_PURPOSES } from './data';
 import type { TripPurpose } from './data';
@@ -122,6 +133,8 @@ export interface SerializedState {
   happiness: HappinessState;
   /** Pollution grids (index × 10), run-length encoded. */
   pollution: { air: number[]; noise: number[] };
+  kpis: KpiState;
+  scenario: ScenarioState | null;
 }
 
 /** Traffic state as saved: typed arrays run-length encoded. */
@@ -282,7 +295,11 @@ export function serializeState(state: SimState): SerializedState {
     })),
     economy: JSON.parse(JSON.stringify(state.economy)) as EconomyState,
     services: JSON.parse(JSON.stringify(state.services)) as ServicesState,
-    fires: state.fires.map((f) => ({ ...f })),
+    fires: state.fires.map((f) => ({
+      ...f,
+      measures: [...f.measures],
+      evacuated: [...f.evacuated],
+    })),
     events: state.events.map((e) => ({ ...e, measures: [...e.measures] })),
     complaints: state.complaints.map((c) => ({ ...c })),
     happiness: {
@@ -294,6 +311,8 @@ export function serializeState(state: SimState): SerializedState {
       air: rleEncode(state.pollution.air),
       noise: rleEncode(state.pollution.noise),
     },
+    kpis: JSON.parse(JSON.stringify(state.kpis)) as KpiState,
+    scenario: state.scenario ? (JSON.parse(JSON.stringify(state.scenario)) as ScenarioState) : null,
   };
 }
 
@@ -370,7 +389,12 @@ export function deserializeState(data: SerializedState): SimState {
     minute: num(data.minute, 'time'),
     rng: new Rng(num(data.rngState, 'RNG state')),
     cash: num(data.cash, 'cash'),
-    rules: { weatherEvents: rules?.weatherEvents !== false, fires: rules?.fires !== false },
+    rules: {
+      weatherEvents: rules?.weatherEvents !== false,
+      fires: rules?.fires !== false,
+      difficulty: oneOf(rules?.difficulty ?? 'normal', DIFFICULTIES, 'difficulty'),
+      licenceFactor: typeof rules?.licenceFactor === 'number' ? rules.licenceFactor : 1,
+    },
     world,
     buildings,
     nextBuildingId: num(data.nextBuildingId, 'building counter'),
@@ -400,6 +424,8 @@ export function deserializeState(data: SerializedState): SimState {
     complaints: parseList(data.complaints, 'complaints', parseComplaint),
     happiness: parseHappiness(data.happiness),
     pollution: parsePollution(data.pollution, world),
+    kpis: parseKpis(data.kpis),
+    scenario: data.scenario ? parseScenario(data.scenario) : null,
     cache: emptyCache(world),
   };
   rebuildCache(state);
@@ -710,6 +736,77 @@ function parseFire(r: Record<string, unknown>): Fire {
     peak: num(r.peak, 'fire'),
     incidentId: num(r.incidentId, 'fire'),
     firstArrival: num(r.firstArrival, 'fire'),
+    measures: arr(r.measures, 'fire measures').map((m) => oneOf(m, FIRE_MEASURES, 'fire measure')),
+    evacuated: arr(r.evacuated, 'evacuation').map((v) => num(v, 'evacuation')),
+    smokeExposure: num(r.smokeExposure, 'fire'),
+  };
+}
+
+const DAILY_KPI_KEYS: readonly (keyof DailyKpi)[] = [
+  'day',
+  'customerMinutes',
+  'incidents',
+  'peakOff',
+  'mttrMinutes',
+  'congestion',
+  'cash',
+  'cashFlow',
+  'happiness',
+  'fireResponse',
+];
+
+function parseKpis(raw: unknown): KpiState {
+  const r = obj(raw, 'KPI history');
+  const t = obj(r.today, 'KPI history');
+  return {
+    today: {
+      incidents: num(t.incidents, 'KPI history'),
+      cash: num(t.cash, 'KPI history'),
+      peakOff: num(t.peakOff, 'KPI history'),
+      congestion: num(t.congestion, 'KPI history'),
+    },
+    days: arr(r.days, 'KPI history').map((d) => {
+      const o = obj(d, 'KPI history');
+      const out = {} as DailyKpi;
+      for (const k of DAILY_KPI_KEYS) out[k] = num(o[k], `KPI ${k}`);
+      return out;
+    }),
+  };
+}
+
+function parseScenario(raw: unknown): ScenarioState {
+  const r = obj(raw, 'scenario');
+  if (typeof r.id !== 'string') throw new Error('Save has a corrupt scenario.');
+  const b = obj(r.base, 'scenario');
+  const n = (k: string) => num(r[k], `scenario ${k}`);
+  return {
+    id: r.id,
+    startMinute: n('startMinute'),
+    endMinute: n('endMinute'),
+    status: oneOf(r.status, ['running', 'won', 'lost'] as const, 'scenario status'),
+    eventsDone: n('eventsDone'),
+    spent: n('spent'),
+    capitalSpent: n('capitalSpent'),
+    worksSpent: n('worksSpent'),
+    base: {
+      repairs: num(b.repairs, 'scenario'),
+      repairMinutes: num(b.repairMinutes, 'scenario'),
+      customerMinutes: num(b.customerMinutes, 'scenario'),
+      cash: num(b.cash, 'scenario'),
+    },
+    supplySamples: n('supplySamples'),
+    supplySum: n('supplySum'),
+    supplyMin: n('supplyMin'),
+    licenceBreached: r.licenceBreached === true,
+    fireBuilding: n('fireBuilding'),
+    fireStart: n('fireStart'),
+    fireOut: n('fireOut'),
+    smoke: n('smoke'),
+    taxLost: n('taxLost'),
+    backlog: n('backlog'),
+    backlogStart: n('backlogStart'),
+    score: n('score'),
+    endedMinute: n('endedMinute'),
   };
 }
 

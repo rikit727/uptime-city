@@ -25,7 +25,8 @@
 import { conditionOf, classOf } from './assets';
 import { residentsOf } from './buildings';
 import { executeCommand, planCommand } from './commands';
-import { ECONOMY, buildingDef, serviceDefOf } from './data';
+import { ECONOMY, WATER, buildingDef, serviceDefOf } from './data';
+import { irrigatesFromRiver } from './water';
 import type { SimEvent } from './events';
 import { decayFactor, deptOfCrew, earn, spend } from './ledger';
 
@@ -112,7 +113,12 @@ export function dailyTaxes(
       out.businessRates =
         def.jobs * b.occupancy * perJob * rates[def.zone] * lvFactor(def.zone, lv);
     }
-    if (def.exportPerDay) out.farmExports = def.exportPerDay * b.occupancy;
+    if (def.exportPerDay) {
+      out.farmExports = def.exportPerDay * b.occupancy;
+      // An irrigation ban cuts the harvest of farms that water from the mains.
+      if (state.water.restriction >= 2 && def.irrigationLpd && !irrigatesFromRiver(state, b, def))
+        out.farmExports *= WATER.restrictions.irrigationBan.exportFactor;
+    }
   } else {
     const lm = serviceDefOf(b.code)?.landmark;
     if (lm) out.businessRates = lm.ratesPerDay * rates.commercial;

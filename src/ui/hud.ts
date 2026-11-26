@@ -7,8 +7,8 @@ import {
   ASSETS,
   FAULT,
   GAME,
-  TRAFFIC,
   ZONES,
+  scenarioDef,
   cityEventDef,
   cityTotals,
   dayOf,
@@ -22,7 +22,14 @@ import type { Command, DensityId, SimSnapshot } from '../sim';
 import type { SlotId, SlotSummary } from '../platform/saves';
 import { clear, h } from './dom';
 import { formatGameTime, formatInt, formatMW, formatMoney, formatRealDate } from './format';
-import { LPS_PER_MLD, WATER } from '../sim';
+import { LPS_PER_MLD } from '../sim';
+import type { OverlayId } from '../sim';
+import type { Settings } from '../platform/settings';
+import { Dashboard } from './dashboard';
+import { randomSeed, renderBriefing, renderMainMenu, renderResults, renderSettings } from './menus';
+import type { MenuActions, SandboxOptions } from './menus';
+import { OverlayMenu } from './overlayMenu';
+import { ScenarioPanel } from './scenarioPanel';
 import { BudgetPanel } from './budget';
 import { CityPanel } from './cityPanel';
 import { Inbox, formatDuration } from './inbox';
@@ -43,10 +50,17 @@ export interface UiActions {
   deleteSlot(slot: SlotId): Promise<void>;
   exportSave(): void;
   importSave(): Promise<void>;
-  newGame(seed: number): void;
+  /** Start a new sandbox city or a scenario (src/data/scenarios). */
+  newSandbox(opts: SandboxOptions): void;
+  newScenario(id: string): void;
+  /** Load the autosave (main menu "Continue"), and whether there is one. */
+  continueGame(): Promise<void>;
+  hasAutosave(): Promise<boolean>;
+  settings(): Settings;
+  changeSettings(patch: Partial<Settings>): void;
   setGrid(visible: boolean): void;
   /** Show this overlay, or hide it if it is already shown. */
-  toggleOverlay(id: 'water' | 'traffic'): void;
+  toggleOverlay(id: OverlayId): void;
   helpClosed(): void;
   /** Send a command to the sim; failures are shown as a toast. */
   dispatch(cmd: Command): void;
@@ -78,7 +92,11 @@ export class Hud {
   readonly inbox: Inbox;
   readonly budget: BudgetPanel;
   readonly cityPanel: CityPanel;
+  readonly dashboard: Dashboard;
+  readonly scenarioPanel: ScenarioPanel;
+  readonly overlays: OverlayMenu;
   private readonly modal: Modal;
+  private readonly dashEl = h('button', { class: 'chip', title: 'Dashboard (Shift+D)' }, '📊');
   private readonly happyEl = h('button', { class: 'chip happiness', title: 'Happiness' });
   private readonly incidentsEl = h('button', { class: 'chip incidents', title: 'Incidents' });
   private readonly thresholdBar = h('div', { class: 'density-bar threshold-bar hidden' });
@@ -95,8 +113,6 @@ export class Hud {
   private readonly powerEl = h('span', { class: 'chip power' });
   private readonly waterEl = h('button', { class: 'chip water', title: 'Water' });
   private readonly trafficEl = h('button', { class: 'chip traffic', title: 'Traffic' });
-  private readonly legendEl = buildPressureLegend();
-  private readonly trafficLegendEl = buildTrafficLegend();
   private readonly popEl = h('span', { class: 'chip population' });
   private lastStatsMinute = -1;
   private readonly speedButtons: HTMLButtonElement[] = [];
@@ -128,6 +144,9 @@ export class Hud {
     this.inbox = new Inbox(actions);
     this.budget = new BudgetPanel(actions);
     this.cityPanel = new CityPanel(actions);
+    this.dashboard = new Dashboard();
+    this.scenarioPanel = new ScenarioPanel((id) => this.openBriefing(id));
+    this.overlays = new OverlayMenu((id) => this.actions.toggleOverlay(id));
     this.modal = new Modal(() => this.closeModal());
     const topBar = this.buildTopBar();
     this.root = h(
@@ -136,12 +155,14 @@ export class Hud {
       topBar,
       this.buildToolbar(),
       this.statusEl,
-      this.legendEl,
-      this.trafficLegendEl,
+      this.overlays.legend,
+      this.overlays.menu,
+      this.scenarioPanel.el,
       this.inspector.el,
       this.inbox.el,
       this.budget.el,
       this.cityPanel.el,
+      this.dashboard.el,
       this.toasts.el,
       this.modal.el,
     );
@@ -157,6 +178,7 @@ export class Hud {
   private buildTopBar(): HTMLElement {
     this.waterEl.addEventListener('click', () => this.actions.toggleOverlay('water'));
     this.trafficEl.addEventListener('click', () => this.actions.toggleOverlay('traffic'));
+    this.dashEl.addEventListener('click', () => this.togglePanel('dashboard'));
     this.incidentsEl.addEventListener('click', () => this.togglePanel('inbox'));
     this.cashEl.addEventListener('click', () => this.togglePanel('budget'));
     this.happyEl.addEventListener('click', () => this.togglePanel('city'));
@@ -177,8 +199,8 @@ export class Hud {
       b.addEventListener('click', fn);
       menu.append(b);
     };
+    mk('Menu', 'Main menu: new city, scenarios, settings (F10)', () => this.openMainMenu());
     mk('Save / load', 'Save and load (Ctrl+S)', () => this.openSaves());
-    mk('New game', 'Start a new city', () => this.openNewGame());
     mk('Help', 'Help and controls (H)', () => this.openHelp());
     return h(
       'header',
@@ -193,6 +215,8 @@ export class Hud {
       this.incidentsEl,
       this.happyEl,
       this.popEl,
+      this.overlays.button,
+      this.dashEl,
       speeds,
       menu,
     );
@@ -202,11 +226,22 @@ export class Hud {
 
   private buildToolbar(): HTMLElement {
     const bar = h('nav', { class: 'panel toolbar', 'aria-label': 'Build tools' });
+    // Tools are grouped; one group is open at a time (the active tool's, or the one clicked).
     let group = '';
+    let box: HTMLElement = bar;
     for (const t of TOOLS) {
       if (t.group !== group) {
         group = t.group;
-        bar.append(h('div', { class: 'tool-group-label' }, groupLabel(group)));
+        const g = group;
+        const head = h(
+          'button',
+          { class: 'tool-group-head', 'aria-expanded': 'false', title: `${groupLabel(g)} tools` },
+          groupLabel(g),
+        );
+        box = h('div', { class: 'tool-group-items' });
+        head.addEventListener('click', () => this.openGroup(this.openToolGroup === g ? '' : g));
+        this.groups.set(g, { head, items: box });
+        bar.append(h('div', { class: 'tool-group' }, head, box));
       }
       const zone =
         t.tool.kind === 'zone'
@@ -224,7 +259,7 @@ export class Hud {
       );
       b.addEventListener('click', () => this.actions.selectTool(t.tool));
       this.toolButtons.set(t.key, b);
-      bar.append(b);
+      box.append(b);
     }
     for (const d of ZONES.densities) {
       const b = h('button', { title: `${d.name} ([ / ])` }, d.name.split(' ')[0]!);
@@ -261,7 +296,24 @@ export class Hud {
     return bar;
   }
 
+  private readonly groups = new Map<string, { head: HTMLButtonElement; items: HTMLElement }>();
+  private openToolGroup = '';
+
+  /** Open one tool group (closing the others); '' closes them all. */
+  private openGroup(group: string): void {
+    this.openToolGroup = group;
+    for (const [g, { head, items }] of this.groups) {
+      const on = g === group || g === 'select';
+      items.classList.toggle('hidden', !on);
+      head.setAttribute('aria-expanded', String(on));
+      head.classList.toggle('open', on);
+    }
+  }
+
   setActiveTool(tool: ToolId, density: DensityId, threshold = 70, works?: WorksOptions): void {
+    const def = TOOLS.find((t) => toolKey(t.tool) === toolKey(tool));
+    if (def && def.group !== 'select') this.openGroup(def.group);
+    else if (this.groups.size > 0 && this.openToolGroup === '') this.openGroup('');
     this.thresholdBar.classList.toggle('hidden', tool.kind !== 'maintain');
     this.worksBar.classList.toggle('hidden', tool.kind !== 'maintain');
     for (const [t, b] of this.thresholdButtons) b.classList.toggle('active', t === threshold);
@@ -310,11 +362,25 @@ export class Hud {
     this.inbox.update(snap);
     this.budget.update(snap);
     this.cityPanel.update(snap);
+    this.dashboard.update(snap);
+    this.scenarioPanel.update(snap);
+    this.lastSnap = snap;
+    const anyPanel =
+      this.inbox.open || this.budget.open || this.cityPanel.open || this.dashboard.open;
+    this.root.classList.toggle('panel-open', anyPanel);
+    this.root.classList.toggle('in-scenario', snap.scenario !== null);
   }
 
+  private lastSnap: SimSnapshot | null = null;
+
   /** Open one side panel (closing the others), or close it if it is open. */
-  togglePanel(which: 'inbox' | 'budget' | 'city'): void {
-    const panels = { inbox: this.inbox, budget: this.budget, city: this.cityPanel };
+  togglePanel(which: 'inbox' | 'budget' | 'city' | 'dashboard'): void {
+    const panels = {
+      inbox: this.inbox,
+      budget: this.budget,
+      city: this.cityPanel,
+      dashboard: this.dashboard,
+    };
     const open = !panels[which].open;
     for (const [k, p] of Object.entries(panels)) p.toggle(k === which ? open : false);
   }
@@ -487,11 +553,10 @@ export class Hud {
   }
 
   /** Mark the active overlay's chip and show its legend. */
-  setOverlay(id: 'none' | 'water' | 'traffic'): void {
+  setOverlay(id: OverlayId): void {
     this.waterEl.classList.toggle('active', id === 'water');
-    this.legendEl.classList.toggle('hidden', id !== 'water');
     this.trafficEl.classList.toggle('active', id === 'traffic');
-    this.trafficLegendEl.classList.toggle('hidden', id !== 'traffic');
+    this.overlays.set(id);
   }
 
   // ---- modals ------------------------------------------------------------
@@ -503,7 +568,63 @@ export class Hud {
   closeModal(): void {
     const wasHelp = this.modal.el.dataset.kind === 'help';
     this.modal.close();
+    this.modal.el.dataset.kind = '';
     if (wasHelp) this.actions.helpClosed();
+  }
+
+  private menuActions(): MenuActions {
+    const a = this.actions;
+    return {
+      newSandbox: (o) => {
+        a.newSandbox(o);
+        this.closeModal();
+      },
+      newScenario: (id) => {
+        a.newScenario(id);
+        this.openBriefing(id);
+      },
+      continueGame: async () => {
+        await a.continueGame();
+        this.closeModal();
+      },
+      hasAutosave: () => a.hasAutosave(),
+      openSaves: () => void this.openSaves(),
+      openHelp: () => this.openHelp(),
+      settings: () => a.settings(),
+      changeSettings: (p) => a.changeSettings(p),
+      close: () => this.closeModal(),
+    };
+  }
+
+  /** The main menu. `inGame` false on the first screen (no Resume). */
+  openMainMenu(inGame = true): void {
+    this.modal.el.dataset.kind = 'menu';
+    renderMainMenu(this.modal.open(GAME_NAME), this.menuActions(), inGame);
+  }
+
+  openSettings(): void {
+    this.modal.el.dataset.kind = 'settings';
+    renderSettings(this.modal.open('Settings'), this.menuActions(), true);
+  }
+
+  openBriefing(id: string): void {
+    this.modal.el.dataset.kind = 'briefing';
+    renderBriefing(this.modal.open('Scenario briefing'), this.menuActions(), id, true, false);
+  }
+
+  /** End-of-scenario results (from the scenarioEnded event). */
+  showResults(won: boolean): void {
+    const snap = this.lastSnap;
+    if (!snap?.scenario) return;
+    this.modal.el.dataset.kind = 'results';
+    renderResults(
+      this.modal.open('Scenario over'),
+      this.menuActions(),
+      scenarioDef(snap.scenario.id).name,
+      won,
+      snap.city.score(),
+      snap.city.objectives(),
+    );
   }
 
   openHelp(): void {
@@ -605,29 +726,6 @@ export class Hud {
     );
   }
 
-  openNewGame(): void {
-    this.modal.el.dataset.kind = 'new';
-    const body = this.modal.open('New game');
-    clear(body);
-    const seedInput = h('input', {
-      type: 'number',
-      min: '0',
-      max: '4294967295',
-      value: String(randomSeed()),
-    });
-    const start = h('button', { class: 'primary' }, 'Start new city');
-    start.addEventListener('click', () => {
-      const seed = Number.parseInt(seedInput.value, 10);
-      this.actions.newGame(Number.isFinite(seed) ? seed >>> 0 : randomSeed());
-      this.closeModal();
-    });
-    body.append(
-      h('p', {}, 'Unsaved progress in the current city will be lost.'),
-      h('label', { class: 'field' }, 'Map seed ', seedInput),
-      h('div', { class: 'row' }, start),
-    );
-  }
-
   async openSaves(): Promise<void> {
     this.modal.el.dataset.kind = 'saves';
     const body = this.modal.open('Save and load');
@@ -721,61 +819,4 @@ function groupLabel(group: string): string {
   );
 }
 
-/** Legend for the water pressure overlay (hidden until the overlay is on). */
-function buildPressureLegend(): HTMLElement {
-  const { ramp, rampMaxM } = WATER.overlay;
-  const p = WATER.pressure;
-  const bar = h('div', {
-    class: 'legend-bar',
-    style: `background: linear-gradient(to right, ${ramp.join(', ')})`,
-  });
-  const marks = h('div', { class: 'legend-marks' });
-  for (const [m, label] of [
-    [p.noSupplyM, `${p.noSupplyM}`],
-    [p.lowM, `${p.lowM}`],
-    [p.goodM, `${p.goodM}`],
-    [rampMaxM, `${rampMaxM}+ m`],
-  ] as const) {
-    marks.append(h('span', { style: `left:${(100 * m) / rampMaxM}%` }, label));
-  }
-  return h(
-    'div',
-    { class: 'panel legend hidden', 'aria-label': 'Water pressure legend' },
-    h('strong', {}, 'Water pressure'),
-    bar,
-    marks,
-    h(
-      'div',
-      { class: 'muted' },
-      `Below ${p.noSupplyM} m no supply · below ${p.lowM} m low · ${p.goodM} m+ good`,
-    ),
-  );
-}
-
-/** Legend for the traffic overlay (hidden until the overlay is on). */
-function buildTrafficLegend(): HTMLElement {
-  const { ramp, rampMaxRatio, closed, lane } = TRAFFIC.overlay;
-  const bar = h('div', {
-    class: 'legend-bar',
-    style: `background: linear-gradient(to right, ${ramp.join(', ')})`,
-  });
-  const marks = h('div', { class: 'legend-marks' });
-  for (const r of [0, 0.5]) {
-    marks.append(h('span', { style: `left:${(100 * r) / rampMaxRatio}%` }, `${r * 100}%`));
-  }
-  marks.append(h('span', { style: 'left:100%' }, `${Math.round(rampMaxRatio * 100)}%+`));
-  const swatch = (colour: string) =>
-    h('span', { class: 'legend-swatch', style: `background:${colour}` });
-  return h(
-    'div',
-    { class: 'panel legend hidden', 'aria-label': 'Traffic legend' },
-    h('strong', {}, 'Traffic (flow / capacity)'),
-    bar,
-    marks,
-    h('div', { class: 'muted' }, swatch(closed), ' road closed · ', swatch(lane), ' lane closed'),
-  );
-}
-
-export function randomSeed(): number {
-  return Math.floor(Math.random() * 0xffffffff) >>> 0;
-}
+export { randomSeed };

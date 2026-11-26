@@ -66,6 +66,13 @@ export class TrafficLayer {
     this.overlay.visible = false;
   }
 
+  setCarsVisible(on: boolean): void {
+    this.carsOn = on;
+    this.carKey = '';
+  }
+
+  private carsOn = true;
+
   get overlayVisible(): boolean {
     return this.overlay.visible;
   }
@@ -98,6 +105,12 @@ export class TrafficLayer {
   }
 
   private buildCars(snap: SimSnapshot): void {
+    if (!this.carsOn) {
+      this.list = [];
+      this.cars.begin();
+      this.cars.end();
+      return;
+    }
     const w = snap.world;
     const tc = snap.trafficCache;
     const faults = snap.faults.tile;

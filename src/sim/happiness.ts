@@ -22,6 +22,7 @@ import { landValueOf, pollutionAt, pollutionShare } from './pollution';
 import { accessOf, binsMissed, serviceLevel } from './services';
 import type { Building, HappinessFactor, HappinessState, SimState } from './state';
 import { dailyTaxes } from './economy';
+import { closedByFire } from './fire';
 import { earn } from './ledger';
 import { cellOfTile } from './traffic';
 import { serviceTile } from './water';
@@ -112,9 +113,15 @@ export function tickResidentsRound(state: SimState, perTick = ROUND_BUILDINGS_PE
   for (let k = lo; k < end; k++) {
     const b = list[k]!;
     const t = dailyTaxes(state, b);
-    taxes.councilTax += t.councilTax;
-    taxes.businessRates += t.businessRates;
-    taxes.farmExports += t.farmExports;
+    if (state.fires.length > 0 && closedByFire(state, b.id)) {
+      // Burning or evacuated: closed, so nothing is paid this hour.
+      if (state.scenario)
+        state.scenario.taxLost += (t.councilTax + t.businessRates + t.farmExports) / 24;
+    } else {
+      taxes.councilTax += t.councilTax;
+      taxes.businessRates += t.businessRates;
+      taxes.farmExports += t.farmExports;
+    }
     const r = residentsOf(b);
     if (r > 0) {
       const f = homeFactors(state, b);
@@ -136,6 +143,16 @@ export function tickResidentsRound(state: SimState, perTick = ROUND_BUILDINGS_PE
   return true;
 }
 
+/** Points off happiness for water restrictions in force. */
+export function restrictionPenalty(state: SimState): number {
+  const r = WATER.restrictions;
+  const lvl = state.water.restriction;
+  return (
+    (lvl >= 1 ? r.hosepipeBan.happinessPenalty : 0) +
+    (lvl >= 2 ? r.irrigationBan.happinessPenalty : 0)
+  );
+}
+
 function finishRound(state: SimState): void {
   const hp = state.happiness;
   const H = CITY.happiness;
@@ -147,7 +164,11 @@ function finishRound(state: SimState): void {
     for (const k of FACTOR_KEYS) {
       hp.factors[k] = Math.round((hp.sumFactors[k] / hp.sumWeight) * 1000) / 1000;
     }
-    hp.city = Math.round(Math.max(0, hp.sumScore / hp.sumWeight - hp.complaintPenalty) * 10) / 10;
+    hp.city =
+      Math.round(
+        Math.max(0, hp.sumScore / hp.sumWeight - hp.complaintPenalty - restrictionPenalty(state)) *
+          10,
+      ) / 10;
   } else {
     hp.city = 0;
     for (const k of FACTOR_KEYS) hp.factors[k] = 0;
