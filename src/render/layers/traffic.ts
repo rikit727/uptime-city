@@ -35,6 +35,9 @@ interface Car {
   /** Tiles per second at 1×. */
   speed: number;
   y: number;
+  /** Fixed position across the road (its lane) and the tile's start along it. */
+  across: number;
+  along0: number;
 }
 
 const hash = (n: number): number => {
@@ -59,7 +62,7 @@ export class TrafficLayer {
   /** Sim speed multiplier (0 when paused): cars stop when the game does. */
   timeScale = 1;
 
-  constructor(private readonly mapWidth: number) {
+  constructor() {
     this.cars = new InstanceBatch(this.group, unitBox(), new MeshLambertMaterial(), 512, false);
     this.group.add(this.overlay);
     this.tiles = new InstanceBatch(this.overlay, unitBox(), new MeshBasicMaterial(), 1024, false);
@@ -130,43 +133,56 @@ export class TrafficLayer {
       const time = tc.timeSec[t]!;
       const slow = free > 0 && time < Infinity ? free / time : 1;
       const y = w.terrain[t] === Terrain.Water ? 0.32 : 0.1;
+      const x0 = x;
+      const z0 = (t - x) / w.width;
       for (let k = 0; k < n; k++) {
+        const dir = k % 2 === 0 ? 1 : -1;
+        const lane = 0.16 * dir;
         list.push({
           tile: t,
           alongX,
-          dir: k % 2 === 0 ? 1 : -1,
+          dir,
           phase: hash(t * 31 + k * 977),
           speed: CAR_SPEED * slow * (0.8 + 0.4 * hash(t + k * 13)),
           y,
+          across: alongX ? z0 + 0.5 + lane : x0 + 0.5 + lane,
+          along0: alongX ? x0 : z0,
         });
       }
     }
     this.list = list;
+    // Each car's scale and lane are fixed here; moveCars only writes its position.
     this.cars.begin();
     for (let i = 0; i < list.length; i++) {
-      const colour = CAR_COLOURS[Math.floor(hash(list[i]!.tile * 3 + i) * CAR_COLOURS.length)]!;
-      this.cars.add(this.m.identity(), this.c.set(colour));
+      const car = list[i]!;
+      const colour = CAR_COLOURS[Math.floor(hash(car.tile * 3 + i) * CAR_COLOURS.length)]!;
+      const sx = car.alongX ? 0.3 : 0.16;
+      const sz = car.alongX ? 0.16 : 0.3;
+      this.cars.add(this.m.makeScale(sx, 0.12, sz), this.c.set(colour));
     }
     this.cars.end();
   }
 
+  /** Slide every car along its tile: only the translation column changes. */
   private moveCars(): void {
-    const width = this.mapWidth;
     const list = this.list;
+    if (list.length === 0) return;
+    const a = this.cars.mesh.instanceMatrix.array as Float32Array;
+    const clock = this.clock;
     for (let i = 0; i < list.length; i++) {
       const car = list[i]!;
-      const x0 = car.tile % width;
-      const z0 = Math.floor(car.tile / width);
-      const f = (((car.phase + this.clock * car.speed * car.dir) % 1) + 1) % 1;
-      const lane = 0.16 * car.dir;
-      const px = car.alongX ? x0 + f : x0 + 0.5 + lane;
-      const pz = car.alongX ? z0 + 0.5 + lane : z0 + f;
-      const sx = car.alongX ? 0.3 : 0.16;
-      const sz = car.alongX ? 0.16 : 0.3;
-      this.m.makeScale(sx, 0.12, sz).setPosition(px, car.y, pz);
-      this.cars.mesh.setMatrixAt(i, this.m);
+      const f = (((car.phase + clock * car.speed * car.dir) % 1) + 1) % 1;
+      const o = i * 16 + 12;
+      if (car.alongX) {
+        a[o] = car.along0 + f;
+        a[o + 2] = car.across;
+      } else {
+        a[o] = car.across;
+        a[o + 2] = car.along0 + f;
+      }
+      a[o + 1] = car.y;
     }
-    if (list.length > 0) this.cars.mesh.instanceMatrix.needsUpdate = true;
+    this.cars.mesh.instanceMatrix.needsUpdate = true;
   }
 
   private buildOverlay(snap: SimSnapshot): void {

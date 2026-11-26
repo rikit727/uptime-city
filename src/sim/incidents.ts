@@ -50,7 +50,7 @@ import type { AssetRef, Crew, Incident, RoadClosure, SimState, WorkOrder } from 
 import { refreshTrafficTimes } from './traffic';
 import { MINUTES_PER_DAY } from './time';
 import type { CrewType, IncidentKind } from './types';
-import { serviceTile } from './water';
+import { linksOf } from './water';
 
 export { FAULT };
 
@@ -543,7 +543,7 @@ function updateImpacts(state: SimState, emit: Emit): void {
     cityOut += c;
     const pri = def.priority === 0;
     if (dry) {
-      const t = serviceTile(w, b, def);
+      const t = linksOf(state, b, def).service;
       if (t >= 0) bump(waterOut, L.netAt[t]!, c, pri);
     }
     if (off) {

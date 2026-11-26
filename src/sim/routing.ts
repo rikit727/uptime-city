@@ -63,51 +63,60 @@ export function nearestRoad(w: WorldState, tile: number, radius: number): number
   return best;
 }
 
-/** Binary min-heap of (cost, tile); ties pop the lower tile first. */
+/**
+ * Allocation-free binary min-heap of (cost, tile) on typed arrays; ties pop the
+ * lower tile first, so the pop order is fully determined and searches are
+ * deterministic. `pop()` returns the tile and leaves its cost in `cost`.
+ */
 export class MinHeap {
-  private c: number[] = [];
-  private t: number[] = [];
-  get size(): number {
-    return this.c.length;
-  }
+  private c = new Float64Array(1024);
+  private t = new Int32Array(1024);
+  size = 0;
+  /** Cost of the tile returned by the last pop(). */
+  cost = 0;
   clear(): void {
-    this.c.length = 0;
-    this.t.length = 0;
-  }
-  private less(ca: number, ta: number, cb: number, tb: number): boolean {
-    return ca < cb || (ca === cb && ta < tb);
+    this.size = 0;
   }
   push(cost: number, tile: number): void {
+    if (this.size === this.c.length) {
+      const c = new Float64Array(this.size * 2);
+      const t = new Int32Array(this.size * 2);
+      c.set(this.c);
+      t.set(this.t);
+      this.c = c;
+      this.t = t;
+    }
     const { c, t } = this;
-    let i = c.length;
-    c.push(cost);
-    t.push(tile);
+    let i = this.size++;
     while (i > 0) {
       const p = (i - 1) >> 1;
-      if (!this.less(cost, tile, c[p]!, t[p]!)) break;
-      c[i] = c[p]!;
+      const cp = c[p]!;
+      if (cp < cost || (cp === cost && t[p]! < tile)) break;
+      c[i] = cp;
       t[i] = t[p]!;
       i = p;
     }
     c[i] = cost;
     t[i] = tile;
   }
-  /** Pop the cheapest; returns [cost, tile]. */
-  pop(): [number, number] {
+  pop(): number {
     const { c, t } = this;
-    const top: [number, number] = [c[0]!, t[0]!];
-    const lc = c.pop()!;
-    const lt = t.pop()!;
-    const len = c.length;
+    const top = t[0]!;
+    this.cost = c[0]!;
+    const len = --this.size;
     if (len > 0) {
+      const lc = c[len]!;
+      const lt = t[len]!;
       let i = 0;
       for (;;) {
         const l = 2 * i + 1;
         if (l >= len) break;
         const r = l + 1;
-        const k = r < len && this.less(c[r]!, t[r]!, c[l]!, t[l]!) ? r : l;
-        if (!this.less(c[k]!, t[k]!, lc, lt)) break;
-        c[i] = c[k]!;
+        let k = l;
+        if (r < len && (c[r]! < c[l]! || (c[r] === c[l] && t[r]! < t[l]!))) k = r;
+        const ck = c[k]!;
+        if (ck > lc || (ck === lc && t[k]! > lt)) break;
+        c[i] = ck;
         t[i] = t[k]!;
         i = k;
       }
@@ -128,12 +137,24 @@ function roadPath(w: WorldState, from: number, to: number, slow?: SlowFactors): 
   cost[from] = 0;
   heap.push(0, from);
   while (heap.size > 0) {
-    const [c, t] = heap.pop();
+    const t = heap.pop();
+    const c = heap.cost;
     if (c > cost[t]!) continue;
     if (t === to) break;
     const x = t % w.width;
-    const nb = [x > 0 ? t - 1 : -1, x < w.width - 1 ? t + 1 : -1, t - w.width, t + w.width];
-    for (const m of nb) {
+    for (let k = 0; k < 4; k++) {
+      const m =
+        k === 0
+          ? x > 0
+            ? t - 1
+            : -1
+          : k === 1
+            ? x < w.width - 1
+              ? t + 1
+              : -1
+            : k === 2
+              ? t - w.width
+              : t + w.width;
       if (m < 0 || m >= n || w.road[m] === 0) continue;
       const cand = c + roadSeconds(w.road[m]!) * (slow ? (slow[m] ?? 1) : 1);
       if (cand < cost[m]!) {

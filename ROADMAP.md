@@ -2,11 +2,11 @@
 
 ## Cut from v1
 
-Nothing has been cut so far (milestone 6 shipped the events calendar, all five
-landmarks, noise pollution and glasshouses; milestone 7 shipped all four scenarios). If cuts are needed, the spec's order is: events
-calendar, then landmarks other than the stadium and shopping centre, then
-noise pollution, then glasshouses, then the 4th scenario. Record each cut here
-with the milestone and reason.
+Nothing was cut from v1: milestone 6 shipped the events calendar, all five
+landmarks, noise pollution and glasshouses; milestone 7 shipped all four scenarios;
+milestone 8 (performance and docs) completed the build. Had cuts been needed, the
+spec's order was: events calendar, then landmarks other than the stadium and shopping
+centre, then noise pollution, then glasshouses, then the 4th scenario.
 
 ## Planned after v1
 
@@ -19,7 +19,14 @@ with the milestone and reason.
   metered area).
 - Natural disasters such as flooding.
 - Audio (generated in code, no external assets).
-- Moving the simulation into a Web Worker if profiling shows the need.
+- Moving the simulation into a Web Worker if profiling shows the need (milestone 8
+  measured ~0.25 ms of sim per frame at 4× on a full map, so v1 stays on the main
+  thread; decision 107).
+- Performance follow-ups from milestone 8: split the water solve's two routing passes
+  across ticks (needs the first pass's flows saved), service coverage on the
+  junction-level graph (a road change costs ~7 ms on a full map), incremental
+  building-layer updates instead of full rebuilds, and measuring frame times on real
+  laptop GPUs (the profiler here only has a software GPU).
 - A proper power-flow model (shared line limits, losses) instead of the
   per-substation widest-path limit used in v1.
 - Buildings redeveloping in place to a higher density when demand and land
@@ -35,9 +42,9 @@ with the milestone and reason.
   storm tanks (v1 sewers are implicit and only the works has a capacity).
 - Traffic: directional flows and turn delays at junctions (signals, roundabouts);
   per-purpose time-of-day destination choice (v1 uses one gravity model per
-  purpose with a fixed deterrence); mode choice once public transport exists; a
-  faster full-map assignment (a junction-level graph instead of road tiles) so
-  rounds on a fully built map take less than the current ~2 game hours.
+  purpose with a fixed deterrence); mode choice once public transport exists;
+  shorter rounds on big maps (the junction-level graph of milestone 8 made searches
+  ~4× cheaper, which leaves room to raise `nodesPerTick`).
 - Roadworks: crew shift patterns for night works (v1 only starts night works at
   20:00), closures for the whole permit slot with signed diversions, fines for
   permit overruns and clashes (with the M6 economy), and coordinating utilities'

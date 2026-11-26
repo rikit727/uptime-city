@@ -10,7 +10,14 @@ export default defineConfig({
   base,
   build: {
     target: 'es2022',
-    chunkSizeWarningLimit: 1200,
+    chunkSizeWarningLimit: 700,
+    rolldownOptions: {
+      output: {
+        // Three.js in its own chunk: it changes far less often than the game, so
+        // browsers and the service worker keep it cached across updates.
+        manualChunks: (id: string) => (id.includes('node_modules/three/') ? 'three' : undefined),
+      },
+    },
   },
   plugins: [
     {

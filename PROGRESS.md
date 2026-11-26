@@ -4,16 +4,16 @@ Spec: `docs/BUILD_PROMPT.md`. Architecture: `ARCHITECTURE.md`. Conventions: `CLA
 
 ## Milestones
 
-| #   | Milestone                                                              | Status      |
-| --- | ---------------------------------------------------------------------- | ----------- |
-| 1   | Scaffold, PWA, CI + Pages, grid, camera, roads, zoning, save/load      | **Done**    |
-| 2   | Sim core: time, seasons, weather, growth (incl. farms), power          | **Done**    |
-| 3   | Water, wastewater, pressure zones, irrigation                          | **Done**    |
-| 4   | Asset condition, incidents, crews, work orders                         | **Done**    |
-| 5   | Traffic, roadworks, permits                                            | **Done**    |
-| 6   | Services, landmarks, events, pollution, economy, happiness, complaints | **Done**    |
-| 7   | Overlays, dashboard, menus and settings, scenarios, UI polish          | **Done**    |
-| 8   | Performance pass and final docs review                                 | Not started |
+| #   | Milestone                                                              | Status   |
+| --- | ---------------------------------------------------------------------- | -------- |
+| 1   | Scaffold, PWA, CI + Pages, grid, camera, roads, zoning, save/load      | **Done** |
+| 2   | Sim core: time, seasons, weather, growth (incl. farms), power          | **Done** |
+| 3   | Water, wastewater, pressure zones, irrigation                          | **Done** |
+| 4   | Asset condition, incidents, crews, work orders                         | **Done** |
+| 5   | Traffic, roadworks, permits                                            | **Done** |
+| 6   | Services, landmarks, events, pollution, economy, happiness, complaints | **Done** |
+| 7   | Overlays, dashboard, menus and settings, scenarios, UI polish          | **Done** |
+| 8   | Performance pass and final docs review                                 | **Done** |
 
 ## Milestone 1: what exists
 
@@ -368,6 +368,41 @@ Spec: `docs/BUILD_PROMPT.md`. Architecture: `ARCHITECTURE.md`. Conventions: `CLA
 - Measured: generating a scenario takes 0.1–0.4 s; a 30-day scenario runs headless in
   ~20 s (~0.5 ms a tick on a ~500-building city).
 
+## Milestone 8: what exists
+
+- Profiling tools: `npm run profile` (`tests/perf/`: a fully built 128×128 map from the
+  city generator, ~4,000 buildings and 3,540 road tiles, two game days timed per system
+  and per tick, cache rebuilds, overlays, saves, and the four scenario cities);
+  `PROFILE_SAVE=path` writes that map as a save; `scripts/profile-render.mjs` loads it into
+  the production build in headless Chromium and times the sim step, each render layer and
+  the HUD per frame, with draw calls and triangles.
+- Traffic: assignment searches a junction-level graph (`src/sim/trafficGraph.ts`; nodes
+  are junctions, dead ends, load tiles and one tile per junction-free loop, edges are the
+  runs between them). Same costs as the tile search; traffic went from 1.6 to 0.35 ms a
+  tick. Derived only (built from the layout and the round's table, re-weighted on
+  `timesVersion`), so saves are unchanged.
+- Water: cached building connections (`cache.water.links`, cleared by `rebuildWater`),
+  reusable solve buffers, a typed-array heap, demand curves once per solve. Used by the
+  solve, the finish step, the impact count and happiness.
+- `rebuildNetwork` 2.7 → 0.5 ms (line capacity table, no per-tile arrays, squared
+  distances); one typed-array `MinHeap` for every search; `buildingDef` is a dense array.
+- Scheduling: service ratios at :06 and the waste round at 07:21 (off the water solve
+  ticks); automatic maintenance one department a minute, 01:30–01:32.
+- Render: a supply change (outages) rebuilds only the window bands; cars write only their
+  positions each frame. Three.js is its own build chunk (544 kB; the game is 342 kB).
+- Results on the profiling map: average tick 3.2 → 1.6 ms, p99 8.1 → ~5.5 ms, ticks over
+  4 ms 26% → ~5%; render JS 0.5–2 ms a frame; ~20 draw calls, 0.4–0.6 M triangles.
+  Scenario cities: 0.25–0.45 ms a tick. Details in ARCHITECTURE.md, "Performance".
+- Docs reviewed against the code: README (status, commands, controls), ARCHITECTURE
+  (modules, tick order, cache, traffic and water models, rendering, performance,
+  decisions 100–108), CLAUDE (commands, cache rules, performance conventions, tests),
+  ROADMAP (no cuts; performance follow-ups). Every BUILD_PROMPT test item and handover
+  deliverable is covered. No save format change (still version 7).
+- Tests (216, 5 new): the junction graph covers every road tile once, matches a
+  tile-by-tile search (congestion, a closed run, a closed junction, a junction-free loop)
+  and is rebuilt or re-weighted when it should be; cached water connections match the ring
+  searches and clear on road changes; automatic maintenance books one department a minute.
+
 ## In progress
 
 Nothing.
@@ -376,7 +411,13 @@ Nothing.
 
 - GitHub Pages must be enabled once in the repository settings
   (Settings → Pages → Source: GitHub Actions) before `deploy.yml` can publish.
-- The main JS chunk is ~600 kB (mostly Three.js); fine for now, revisit in M8.
+- Frame rates are unmeasured on real hardware: the browser profiler only has a software
+  GPU. The JS cost per frame and the draw-call and triangle counts suggest a mid-range
+  laptop holds 60 fps on a full map, but check it.
+- On the profiling map about 5% of ticks take over 4 ms (p99 ~5.5 ms), mostly the water
+  solve tick (~2.3 ms) plus whatever shares it; a tick lands at most every ~7 frames at 4×.
+- On a full map a road command costs ~7 ms (`rebuildServices`) and a buildings-layer
+  rebuild ~8 ms (at most every 300 ms while buildings change): one slow frame each.
 - Behind the main menu at start the game builds a throwaway random city (cheap, but
   it is replaced as soon as the player picks something).
 - Scenario tuning was checked headlessly with simple strategies, not by full playtests;
@@ -385,8 +426,8 @@ Nothing.
 - Generated cities are a regular grid; there is no organic street pattern or highway.
 - The scenario briefing opens after the city is built; there is no loading indicator
   (generation takes well under half a second).
-- Overlays rebuild up to every 500 ms while layers change; on a full map the condition
-  and pollution overlays touch 16,384 tiles each rebuild (check in M8).
+- Overlays rebuild up to every 500 ms while layers change; on a full map a rebuild
+  costs 1.5–4 ms (land value is the dearest).
 - Buildings never redevelop to a higher density in place; re-zoning demolishes
   them.
 - Economy balance is a first pass: a small town with a stadium runs a deficit,
@@ -405,12 +446,8 @@ Nothing.
 - The happiness chip reads "–" until the first residents round after people move
   in.
 - Several substations on one line are not limited jointly (decision 22).
-- Power dispatch scales with building count (~2 ms on a full map every 5th
-  tick); slice it in the M8 performance pass if profiling shows the need.
-- The water solve is one network per tick; a single map-wide network of
-  ~5,000 main tiles takes ~2 ms. If M8 profiling shows a bigger network near
-  the 4 ms budget, split the two routing passes across ticks (they would need
-  their flows saved, see decision 33).
+- The power dispatch takes ~1.1 ms on a full map every 5th tick; the water solve
+  ~2.3 ms for a map-wide network (not split across ticks, decision 106).
 - Cities from v2 saves lose water (and slowly occupancy) until the player
   builds an intake and treatment works; the migration only lays mains.
 - A sewage works without power counts all its inflow as spill.
@@ -420,9 +457,8 @@ Nothing.
   network double-count in the inbox; city customer-minutes count each customer
   once.
 - Crews pass closures (decision 54/67) but are slowed by congestion.
-- On a fully built map a traffic round takes about 2 game hours, so flows lag the
-  peaks a little; the round-start tick (trip table) costs ~2.7 ms. Candidates for
-  M8: a junction-level graph, or building the trip table across ticks.
+- On the profiling map a traffic round takes ~56 game minutes, so flows lag the peaks
+  a little; `nodesPerTick` could now be raised (searches are ~4× cheaper).
 - Traffic flows are two-way per tile; there are no junction delays or signals.
 - Road closures only apply while a crew is on site, not for the whole permit
   slot (decision 62). Night works only start at 20:00; crews do not stop at 06:00.
@@ -432,25 +468,21 @@ Nothing.
 - Building a local road across an avenue replaces the avenue tile at the crossing
   (M1 road tool behaviour).
 - Repairs are paid even when cash is negative; loans are the remedy.
-- `rebuildNetwork` takes about 2 ms on a dense power grid and runs on every
-  cable fault and repair; make it incremental in M8 if it shows in profiles.
 - Crews on duty follow department budgets (1–3 per depot or fire station).
 - Crew labels use global crew ids ("Water crew 3").
 - `npm audit` reports 4 moderate advisories in build-time dependencies
-  (minimatch via vite-plugin-pwa/workbox-build). Nothing ships to the browser;
-  recheck when upgrading.
+  (minimatch via vite-plugin-pwa/workbox-build); rechecked in M8, unchanged, and
+  `npm audit --omit=dev` is clean. Nothing ships to the browser; recheck when upgrading.
 
 ## Exact next step
 
-Start **milestone 8** (performance pass and final docs review):
+All eight milestones are done: v1 is complete. Suggested next steps, in order:
 
-1. Profile a fully built 128×128 map (a sandbox city grown to ~7,000 buildings, and
-   the scenario cities) in Chromium: frame time, sim time per system, render layer
-   rebuilds (buildings, overlays, cars). Hold 60 fps and the 4 ms sim budget.
-2. Candidates from the notes above: slice the power dispatch on big maps, make
-   `rebuildNetwork` incremental, build the traffic trip table across ticks or move to a
-   junction-level graph, split the water solve's routing passes, and cheaper overlay
-   rebuilds (only changed tiles, or a DataTexture instead of instances).
-3. Bundle size: the main chunk is ~600 kB (Three.js); try manual chunks.
-4. Final review of README, ARCHITECTURE, CLAUDE, ROADMAP and PROGRESS against the code;
-   check every BUILD_PROMPT deliverable and test item is covered; recheck `npm audit`.
+1. Enable GitHub Pages once (Settings → Pages → Source: GitHub Actions) and merge to
+   `main` to publish.
+2. Playtest on a real mid-range laptop: confirm 60 fps on a fully built map (load the
+   profiling save: `PROFILE_SAVE=big.json npm run profile`, then Save / load → Import),
+   with and without shadows and overlays.
+3. Playtest the four scenarios for balance (see the notes above: the heatwave is won by
+   one decision; the ageing network may be hard).
+4. Then pick from `ROADMAP.md` (performance follow-ups, public transport, terrain, ...).

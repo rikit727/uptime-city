@@ -26,6 +26,9 @@ npm run build        # typecheck + production build to dist/
 npm run preview      # serve dist/ at http://localhost:4173
 BASE_PATH=/repo-name/ npm run build   # build for a GitHub Pages subpath
 npm run icons        # regenerate PWA icons in public/icons
+npm run profile      # sim profiler on a fully built map (tests/perf, ~30 s; not in npm test)
+PROFILE_SAVE=/tmp/big.json npm run profile           # ... and write that map as a save
+node scripts/profile-render.mjs /tmp/big.json        # browser profiler (needs npm run preview)
 ```
 
 Before committing: `npm run lint && npm test && npm run build`.
@@ -53,8 +56,11 @@ Before committing: `npm run lint && npm test && npm run build`.
   by `rebuildCache()`. It must be a pure function of saved state. Commands
   that change zoning, lines or facilities call `rebuildEstates()` /
   `rebuildNetwork()`; commands that change roads, mains or water facilities
-  call `rebuildWater()`; commands that change roads also call `rebuildTraffic()`
-  (segments, travel times, clashes); anything that opens, closes or moves incidents
+  call `rebuildWater()` (which also clears the cached building connections);
+  commands that change roads also call `rebuildTraffic()` (segments, travel times,
+  clashes; it also drops the assignment graph); anything that changes travel times goes
+  through `refreshTrafficTimes()`, which bumps `timesVersion` so the graph re-weighs its
+  edges; anything that opens, closes or moves incidents
   and work orders on site calls `rebuildFaults()` (which refreshes travel times);
   commands that change roads or service facilities call `rebuildServices()`;
   use `addBuilding()` / `removeBuildings()` so the tile index stays in step.
@@ -74,9 +80,15 @@ Before committing: `npm run lint && npm test && npm run build`.
   they own.
 - **Tests:** Vitest in `tests/`, mirroring `src/`. Every sim system gets unit
   tests. Use `tests/sim/helpers.ts#testSim()` for a predictable map (straight
-  river in columns 60–62).
+  river in columns 60–62). `tests/perf/` holds the profiler (`*.perf.ts`, run by
+  `npm run profile`, not by `npm test`).
 - **Performance:** sim budget is 4 ms per frame. Spread heavy work across
-  ticks. Use `InstancedMesh` for repeated objects.
+  ticks, and keep scheduled steps off the busy minutes: the power dispatch runs on
+  minutes ≡ 0 (mod 5), the water solve on ≡ 2, a traffic round starts on ≡ 1 (mod 15).
+  Hot loops use typed arrays and reusable scratch buffers (module-level, never state)
+  rather than allocating per call; searches use the shared `MinHeap` (routing.ts).
+  Use `InstancedMesh` for repeated objects, and update only what changed per frame.
+  Check a change with `npm run profile` (see ARCHITECTURE.md, "Performance").
 
 ## How to add things
 
@@ -208,7 +220,9 @@ deterrence, trip rates per purpose (outbound, return, freight, farm), PCU factor
 hourly curves (relative weights; normalised in `data.ts`), the commute growth
 factor, the crew congestion cap, roadworks factors (night hours, cost and
 duration; lane closure duration; combine discount and resurfacing factor; permit
-allowance), cosmetic car density and the overlay ramp. A new trip purpose needs
+allowance), cosmetic car density and the overlay ramp. `nodesPerTick` counts road tiles
+reached per tick (searches run on the junction-level graph, `trafficGraph.ts`). A new
+trip purpose needs
 the id in `TRIP_PURPOSES` (`data.ts`), a curve, and its production and attraction
 in `buildCellTable` (`traffic.ts`).
 

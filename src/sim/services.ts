@@ -61,13 +61,15 @@ export function rebuildServices(state: SimState): void {
   const sc = state.cache.services;
   const free = state.cache.traffic.freeSec;
   const heap = new MinHeap();
+  const width = w.width;
+  const cost = new Float64Array(w.road.length);
   for (const kind of COVERAGE_KINDS) {
     const minutes = sc.minutes[kind];
     const nearest = sc.nearest[kind];
     minutes.fill(Infinity);
     nearest.fill(0);
     const limit = SERVICES.coverage[kind].maxMinutes * 60;
-    const cost = new Float64Array(minutes.length).fill(Infinity);
+    cost.fill(Infinity);
     heap.clear();
     for (const b of state.buildings) {
       const def = serviceDefOf(b.code);
@@ -81,12 +83,24 @@ export function rebuildServices(state: SimState): void {
       }
     }
     while (heap.size > 0) {
-      const [c, t] = heap.pop();
+      const t = heap.pop();
+      const c = heap.cost;
       if (c > cost[t]!) continue;
       minutes[t] = c / 60;
-      const x = t % w.width;
-      const nb = [x > 0 ? t - 1 : -1, x < w.width - 1 ? t + 1 : -1, t - w.width, t + w.width];
-      for (const m of nb) {
+      const x = t % width;
+      for (let k = 0; k < 4; k++) {
+        const m =
+          k === 0
+            ? x > 0
+              ? t - 1
+              : -1
+            : k === 1
+              ? x < width - 1
+                ? t + 1
+                : -1
+              : k === 2
+                ? t - width
+                : t + width;
         if (m < 0 || m >= cost.length || w.road[m] === 0) continue;
         const cand = c + free[m]!;
         if (cand > limit || cand >= cost[m]!) continue;

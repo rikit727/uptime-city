@@ -41,6 +41,7 @@ import type {
   SimState,
   WaterNetwork,
   WaterNetworkResult,
+  WaterLinks,
   WaterStats,
 } from './state';
 import { emptyWaterStats } from './state';
@@ -110,6 +111,7 @@ export function rebuildWater(state: SimState): void {
   const w = state.world;
   const n = w.width * w.height;
   const L = state.cache.water;
+  L.links.clear();
   // 0 = not a node, 1 = main, 2 = facility, 3 = booster.
   const node = new Uint8Array(n);
   const sewerNode = new Uint8Array(n);
@@ -206,6 +208,22 @@ export function sewerTile(w: WorldState, b: Building, def: CustomerDef): number 
   return ringFind(w, b.x, b.y, fw, fd, (t) => w.road[t] !== 0);
 }
 
+/** A building's water connections, cached until the roads or mains change. */
+export function linksOf(state: SimState, b: Building, def: CustomerDef): WaterLinks {
+  const L = state.cache.water;
+  let l = L.links.get(b.id);
+  if (!l) {
+    const w = state.world;
+    l = {
+      service: serviceTile(w, b, def),
+      sewer: sewerTile(w, b, def),
+      river: isFarm(def) && nearRiver(w, b.x, b.y, def.footprint[0], def.footprint[1]),
+    };
+    L.links.set(b.id, l);
+  }
+  return l;
+}
+
 /** True if a footprint is within the irrigation abstraction range of the river. */
 export function nearRiver(w: WorldState, x: number, y: number, fw: number, fd: number): boolean {
   const r = WATER.irrigation.riverRangeTiles;
@@ -252,6 +270,8 @@ export interface WaterFactors {
   homes: number;
   /** Farms may irrigate from the mains (no irrigation ban). */
   mainsIrrigation: boolean;
+  /** Each zone's demand curve at `hour` (computed once per call). */
+  curveNow: Record<ZoneId, number>;
 }
 
 function curve(zone: ZoneId, hour: number): number {
@@ -261,14 +281,21 @@ function curve(zone: ZoneId, hour: number): number {
   return c[h0]! + (c[(h0 + 1) % 24]! - c[h0]!) * t;
 }
 
+function curvesAt(hour: number): Record<ZoneId, number> {
+  const out = {} as Record<ZoneId, number>;
+  for (const z of Object.keys(WATER.demandCurves) as ZoneId[]) out[z] = curve(z, hour);
+  return out;
+}
+
 export function waterFactors(state: SimState): WaterFactors {
   const wx = state.weather;
   const irr = WATER.irrigation;
   const heat = 1 + irr.perDegreeAbove * Math.max(0, wx.temperatureC - irr.refC);
   const wave = wx.event?.id === 'heatwave' ? irr.heatwaveFactor : 1;
   const raining = wx.rainMmPerHour >= irr.rainStopsMmPerHour;
+  const hour = hourFraction(state.minute);
   return {
-    hour: hourFraction(state.minute),
+    hour,
     temperature:
       1 + WATER.temperature.perDegreeAbove * Math.max(0, wx.temperatureC - WATER.temperature.refC),
     irrigation: {
@@ -279,6 +306,7 @@ export function waterFactors(state: SimState): WaterFactors {
     },
     homes: state.water.restriction >= 1 ? 1 - WATER.restrictions.hosepipeBan.residentialSaving : 1,
     mainsIrrigation: state.water.restriction < 2,
+    curveNow: curvesAt(hour),
   };
 }
 
@@ -288,47 +316,50 @@ const activity = (b: Building): number =>
 /** Household, business or process water use now, l/s (irrigation excluded). */
 export function useLps(b: Building, def: CustomerDef, f: WaterFactors): number {
   const homes = def.zone === 'residential' ? f.homes : 1;
-  return (def.waterLpd / 86400) * curve(def.zone, f.hour) * f.temperature * activity(b) * homes;
+  return (def.waterLpd / 86400) * f.curveNow[def.zone] * f.temperature * activity(b) * homes;
 }
 
 /** Farm irrigation or livestock watering now, l/s. */
 export function irrigationLps(b: Building, def: CustomerDef, f: WaterFactors): number {
   if (def.role !== 'grown' || !def.irrigationLpd) return 0;
   const style = def.fields ?? 'arable';
-  return (
-    (def.irrigationLpd / 86400) * curve('agricultural', f.hour) * f.irrigation[style] * activity(b)
-  );
+  return (def.irrigationLpd / 86400) * f.curveNow.agricultural * f.irrigation[style] * activity(b);
 }
 
 /** Does this farm water its fields from the river right now (rather than the mains)? */
 export function irrigatesFromRiver(state: SimState, b: Building, def: CustomerDef): boolean {
   if (def.role !== 'grown' || !def.irrigationLpd || state.water.irrigationCapped) return false;
-  return nearRiver(state.world, b.x, b.y, def.footprint[0], def.footprint[1]);
+  return linksOf(state, b, def).river;
 }
 
 // ---- hydraulics -------------------------------------------------------------
 
-/** Max-heap of (head, tile); ties pop the lower tile first. */
+/** Allocation-free max-heap of (head, tile) on typed arrays; ties pop the lower tile first. */
 class HeadHeap {
-  private h: number[] = [];
-  private t: number[] = [];
+  private h = new Float64Array(1024);
+  private t = new Int32Array(1024);
+  size = 0;
   /** Head of the tile returned by the last pop(). */
   lastHead = 0;
-  get size(): number {
-    return this.h.length;
-  }
-  private above(ha: number, ta: number, hb: number, tb: number): boolean {
-    return ha > hb || (ha === hb && ta < tb);
+  clear(): void {
+    this.size = 0;
   }
   push(head: number, tile: number): void {
+    if (this.size === this.h.length) {
+      const h = new Float64Array(this.size * 2);
+      const t = new Int32Array(this.size * 2);
+      h.set(this.h);
+      t.set(this.t);
+      this.h = h;
+      this.t = t;
+    }
     const { h, t } = this;
-    let i = h.length;
-    h.push(head);
-    t.push(tile);
+    let i = this.size++;
     while (i > 0) {
       const p = (i - 1) >> 1;
-      if (!this.above(head, tile, h[p]!, t[p]!)) break;
-      h[i] = h[p]!;
+      const hp = h[p]!;
+      if (hp > head || (hp === head && t[p]! < tile)) break;
+      h[i] = hp;
       t[i] = t[p]!;
       i = p;
     }
@@ -339,18 +370,20 @@ class HeadHeap {
     const { h, t } = this;
     const top = t[0]!;
     this.lastHead = h[0]!;
-    const lh = h.pop()!;
-    const lt = t.pop()!;
-    const len = h.length;
+    const len = --this.size;
     if (len > 0) {
+      const lh = h[len]!;
+      const lt = t[len]!;
       let i = 0;
       for (;;) {
         const l = 2 * i + 1;
         if (l >= len) break;
         const r = l + 1;
-        const c = r < len && this.above(h[r]!, t[r]!, h[l]!, t[l]!) ? r : l;
-        if (!this.above(h[c]!, t[c]!, lh, lt)) break;
-        h[i] = h[c]!;
+        let c = l;
+        if (r < len && (h[r]! > h[l]! || (h[r] === h[l] && t[r]! < t[l]!))) c = r;
+        const hc = h[c]!;
+        if (hc < lh || (hc === lh && t[c]! > lt)) break;
+        h[i] = hc;
         t[i] = t[c]!;
         i = c;
       }
@@ -359,6 +392,41 @@ class HeadHeap {
     }
     return top;
   }
+}
+
+/** Reusable solve buffers (derived scratch, never state; sized for the map). */
+interface SolveScratch {
+  n: number;
+  head: Float64Array;
+  parent: Int32Array;
+  flow: Float64Array;
+  loadFlow: Float64Array;
+  demand: Float64Array;
+  firstChild: Int32Array;
+  nextSibling: Int32Array;
+  order: Int32Array;
+  stack: Int32Array;
+  heap: HeadHeap;
+}
+let solveScratch: SolveScratch | null = null;
+
+function solveScratchFor(n: number): SolveScratch {
+  if (!solveScratch || solveScratch.n !== n) {
+    solveScratch = {
+      n,
+      head: new Float64Array(n),
+      parent: new Int32Array(n),
+      flow: new Float64Array(n),
+      loadFlow: new Float64Array(n),
+      demand: new Float64Array(n),
+      firstChild: new Int32Array(n),
+      nextSibling: new Int32Array(n),
+      order: new Int32Array(n),
+      stack: new Int32Array(n),
+      heap: new HeadHeap(),
+    };
+  }
+  return solveScratch;
 }
 
 interface Source {
@@ -403,26 +471,24 @@ function solveHydraulics(
   const w = state.world;
   const n = w.width * w.height;
   const L = state.cache.water;
-  const head = new Float64Array(n);
-  const parent = new Int32Array(n);
-  const flow = new Float64Array(n);
-  const firstChild = new Int32Array(n);
-  const nextSibling = new Int32Array(n);
-  const order: number[] = [];
+  const sc = solveScratchFor(n);
+  const { head, parent, flow, loadFlow, firstChild, nextSibling, order, stack, heap } = sc;
+  let orderLen = 0;
   const netAt = L.netAt;
   const zoneAt = L.zoneAt;
   const water = w.water;
   const fault = state.cache.faults.tile;
   const width = w.width;
   const id = net.id;
+  const tiles = net.tiles;
   const hasBoosters = boosters.size > 0;
 
-  const route = (loadFlow: Float64Array): void => {
-    for (const t of net.tiles) {
+  const route = (): void => {
+    for (const t of tiles) {
       head[t] = -Infinity;
       parent[t] = -1;
     }
-    const heap = new HeadHeap();
+    heap.clear();
     for (const s of sources) {
       for (const t of s.tiles) {
         if (s.head > head[t]!) {
@@ -432,7 +498,6 @@ function solveHydraulics(
       }
     }
     const inlet = new Map<number, number>();
-    const nb = [0, 0, 0, 0];
     while (heap.size > 0) {
       const t = heap.pop();
       const h = heap.lastHead;
@@ -441,26 +506,38 @@ function solveHydraulics(
       if ((fault[t]! & FAULT.BURST) !== 0) continue;
       const bt = hasBoosters ? boosters.get(t) : undefined;
       const x = t % width;
-      nb[0] = x > 0 ? t - 1 : -1;
-      nb[1] = x < width - 1 ? t + 1 : -1;
-      nb[2] = t - width;
-      nb[3] = t + width < n ? t + width : -1;
       for (let k = 0; k < 4; k++) {
-        const m = nb[k]!;
+        const m =
+          k === 0
+            ? x > 0
+              ? t - 1
+              : -1
+            : k === 1
+              ? x < width - 1
+                ? t + 1
+                : -1
+              : k === 2
+                ? t - width
+                : t + width < n
+                  ? t + width
+                  : -1;
         if (m < 0 || netAt[m] !== id || (fault[m]! & FAULT.MAIN_OFF) !== 0) continue;
         let cand: number;
-        const bm = hasBoosters ? boosters.get(m) : undefined;
-        if (bm && bt && bm.id === bt.id) cand = h;
-        else if (bm) {
-          // Entering a booster: its head is fixed by the first (highest) feed.
-          if (inlet.has(bm.id)) continue;
-          inlet.set(bm.id, zoneAt[t]!);
-          cand = h + bm.boostM;
-        } else if (bt) {
-          // Leaving a booster: never back into the zone that feeds it.
-          if (zoneAt[m] === inlet.get(bt.id)) continue;
-          cand = h - tileLoss(water[m]!, loadFlow[m]!);
-        } else cand = h - tileLoss(water[m]!, loadFlow[m]!);
+        if (!hasBoosters) cand = h - tileLoss(water[m]!, loadFlow[m]!);
+        else {
+          const bm = boosters.get(m);
+          if (bm && bt && bm.id === bt.id) cand = h;
+          else if (bm) {
+            // Entering a booster: its head is fixed by the first (highest) feed.
+            if (inlet.has(bm.id)) continue;
+            inlet.set(bm.id, zoneAt[t]!);
+            cand = h + bm.boostM;
+          } else if (bt) {
+            // Leaving a booster: never back into the zone that feeds it.
+            if (zoneAt[m] === inlet.get(bt.id)) continue;
+            cand = h - tileLoss(water[m]!, loadFlow[m]!);
+          } else cand = h - tileLoss(water[m]!, loadFlow[m]!);
+        }
         if (cand > head[m]! + 1e-9) {
           head[m] = cand;
           parent[m] = t;
@@ -469,8 +546,7 @@ function solveHydraulics(
       }
     }
     // Pre-order of the route tree (parents before children).
-    order.length = 0;
-    const tiles = net.tiles;
+    orderLen = 0;
     for (const t of tiles) firstChild[t] = -1;
     for (let k = tiles.length - 1; k >= 0; k--) {
       const t = tiles[k]!;
@@ -480,18 +556,18 @@ function solveHydraulics(
         firstChild[p] = t;
       }
     }
-    const stack: number[] = [];
+    let sp = 0;
     for (let k = tiles.length - 1; k >= 0; k--) {
       const t = tiles[k]!;
-      if (parent[t] === -1 && head[t] !== -Infinity) stack.push(t);
+      if (parent[t] === -1 && head[t] !== -Infinity) stack[sp++] = t;
     }
-    while (stack.length > 0) {
-      const t = stack.pop()!;
-      order.push(t);
+    while (sp > 0) {
+      const t = stack[--sp]!;
+      order[orderLen++] = t;
       // Push children in reverse so the lowest tile comes out first.
-      const start = stack.length;
-      for (let c = firstChild[t]!; c !== -1; c = nextSibling[c]!) stack.push(c);
-      for (let i = start, j = stack.length - 1; i < j; i++, j--) {
+      const start = sp;
+      for (let c = firstChild[t]!; c !== -1; c = nextSibling[c]!) stack[sp++] = c;
+      for (let i = start, j = sp - 1; i < j; i++, j--) {
         const tmp = stack[i]!;
         stack[i] = stack[j]!;
         stack[j] = tmp;
@@ -500,8 +576,8 @@ function solveHydraulics(
   };
 
   const load = (): void => {
-    for (const t of net.tiles) flow[t] = 0;
-    for (let k = order.length - 1; k >= 0; k--) {
+    for (const t of tiles) flow[t] = 0;
+    for (let k = orderLen - 1; k >= 0; k--) {
       const t = order[k]!;
       flow[t] = flow[t]! + demand[t]!;
       const p = parent[t]!;
@@ -509,12 +585,15 @@ function solveHydraulics(
     }
   };
 
-  route(flow);
+  for (const t of tiles) loadFlow[t] = 0;
+  route();
   load();
-  route(flow.slice());
+  for (const t of tiles) loadFlow[t] = flow[t]!;
+  route();
   load();
   // Final heads along the routes with the loaded losses.
-  for (const t of order) {
+  for (let k = 0; k < orderLen; k++) {
+    const t = order[k]!;
     const p = parent[t]!;
     if (p < 0) continue;
     const bt = hasBoosters ? boosters.get(t) : undefined;
@@ -538,20 +617,24 @@ export function solveNetwork(state: SimState, net: WaterNetwork): WaterNetworkRe
   const dt = interval * 60;
   const f = waterFactors(state);
 
-  // Customers and demand per connection tile.
-  const demand = new Float64Array(n);
-  const customers: { b: Building; tile: number }[] = [];
+  // Customers and demand per connection tile (scratch: cleared over the network's tiles).
+  const demand = solveScratchFor(n).demand;
+  for (const t of net.tiles) demand[t] = 0;
+  const customers: Building[] = [];
+  const customerTiles: number[] = [];
   let D = 0;
   for (const b of state.buildings) {
     const def = customerDefOf(b.code);
     if (!def) continue;
-    const tile = serviceTile(w, b, def);
+    const tile = linksOf(state, b, def).service;
     if (tile < 0 || L.netAt[tile] !== net.id) continue;
-    let q = useLps(b, def, f) * eventLoadFactor(state, b).water;
+    let q = useLps(b, def, f);
+    if (state.events.length > 0) q *= eventLoadFactor(state, b).water;
     if (!irrigatesFromRiver(state, b, def) && f.mainsIrrigation) q += irrigationLps(b, def, f);
     demand[tile] = demand[tile]! + q;
     D += q;
-    customers.push({ b, tile });
+    customers.push(b);
+    customerTiles.push(tile);
     cache.waterUseLps.set(b.id, q);
   }
   // Unisolated bursts leak a share of their main's capacity.
@@ -684,8 +767,9 @@ export function solveNetwork(state: SimState, net: WaterNetwork): WaterNetworkRe
   for (const [t, bst] of boosters) cache.waterFlowLps.set(bst.id, flow[t]!);
 
   // Customers: supplied while the head at their connection is above the no-supply line.
-  for (const { b, tile } of customers) {
-    if (w.pressure[tile]! < WATER.pressure.noSupplyM) b.dryMinutes += interval;
+  for (let k = 0; k < customers.length; k++) {
+    const b = customers[k]!;
+    if (w.pressure[customerTiles[k]!]! < WATER.pressure.noSupplyM) b.dryMinutes += interval;
     else b.dryMinutes = 0;
   }
   return { demandLps: D, suppliedLps: D - deficit, productionLps: P, leakLps: leak };
@@ -730,10 +814,11 @@ export function finishRound(
   for (const b of state.buildings) {
     const def = customerDefOf(b.code);
     if (!def) continue;
-    const tile = serviceTile(w, b, def);
+    const links = linksOf(state, b, def);
+    const tile = links.service;
     const onMains = tile >= 0 && solvable.has(L.netAt[tile]!);
     const farm = isFarm(def);
-    const river = farm && nearRiver(w, b.x, b.y, def.footprint[0], def.footprint[1]);
+    const river = links.river;
     if (!onMains) {
       if (river) b.dryMinutes = 0;
       else b.dryMinutes += interval;
@@ -752,7 +837,7 @@ export function finishRound(
       if (fromRiver) riverDraw += irr;
     }
     if (!farm && b.dryMinutes === 0) {
-      const st = sewerTile(w, b, def);
+      const st = links.sewer;
       const sid = st >= 0 ? L.sewerAt[st]! : 0;
       if (sid !== 0) {
         sewerFlow[sid] = sewerFlow[sid]! + useLps(b, def, f) * WATER.wastewater.returnFraction;

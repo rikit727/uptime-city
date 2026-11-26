@@ -29,6 +29,7 @@ import { rebuildCache } from './cache';
 import { initWeather } from './weather';
 import { createWorld } from './world';
 import type { WorldState } from './world';
+import type { TrafficGraph } from './trafficGraph';
 
 /** RNG stream id for the live simulation. */
 export const SIM_STREAM = 0;
@@ -224,6 +225,10 @@ export interface TrafficCache {
   clashes: Map<number, number[]>;
   /** Building id -> road tile it loads its traffic onto (-1 = none). Cleared when roads change. */
   access: Map<number, number>;
+  /** Bumped whenever `timeSec` changes, so the assignment graph re-weighs its edges. */
+  timesVersion: number;
+  /** Junction-level graph for assignment (trafficGraph.ts); null = build on next use. */
+  graph: TrafficGraph | null;
 }
 
 export type CrewStatus = 'idle' | 'enRoute' | 'onSite' | 'returning';
@@ -414,6 +419,21 @@ export interface WaterLayout {
   /** Ids of networks the solver runs for, in order. */
   solvable: number[];
   sewers: SewerNetwork[];
+  /**
+   * Building id -> its main connection, sewer and river reach (water.ts `linksOf`).
+   * Filled on first use; cleared by rebuildWater, which runs whenever roads or mains change.
+   */
+  links: Map<number, WaterLinks>;
+}
+
+/** Where a building connects to the water and sewer networks. */
+export interface WaterLinks {
+  /** Main tile serving it (-1 = none in reach). */
+  service: number;
+  /** Road tile whose sewer it drains into (-1 = none). */
+  sewer: number;
+  /** A farm within the irrigation abstraction range of the river. */
+  river: boolean;
 }
 
 /** City-wide water figures (derived, for UI). Filled per solve round. */
@@ -1054,6 +1074,7 @@ export function emptyCache(world: WorldState): SimCache {
       networks: [],
       solvable: [],
       sewers: [],
+      links: new Map(),
     },
     waterStats: emptyWaterStats(),
     waterFlowLps: new Map(),
@@ -1073,6 +1094,8 @@ export function emptyCache(world: WorldState): SimCache {
       segmentAt: new Int32Array(n),
       clashes: new Map(),
       access: new Map(),
+      timesVersion: 0,
+      graph: null,
     },
     services: {
       minutes: perKind(() => new Float32Array(n).fill(Infinity)),
