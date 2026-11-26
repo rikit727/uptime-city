@@ -1,0 +1,92 @@
+{
+  "id": "commercialFire",
+  "name": "Commercial fire",
+  "summary": "A major fire at the shopping centre during trading hours. Contain it, keep the water on and keep the cost down.",
+  "briefing": [
+    "It is a busy Saturday at the shopping centre. In a few minutes a fire will break out inside.",
+    "Fire engines drive from the fire station through the traffic and draw water from the nearest main, which lowers the neighbours' pressure. Open the incident inbox (`) or inspect the shopping centre to order emergency measures:",
+    "Isolate the power (firefighters work faster and electrics stop feeding the fire), cordon the roads round it (traffic diverts, onlookers stay away) and evacuate nearby buildings (no one breathes the smoke, but they close and pay no taxes until the fire is out).",
+    "You are scored on how fast the fire is out (within 90 minutes for full marks), the customer-minutes lost and the final cost: spending, taxes lost while buildings are closed, and the cost of people breathing the smoke (\u00a31.50 a person-minute)."
+  ],
+  "seed": 5150,
+  "start": {
+    "year": 6,
+    "season": "autumn",
+    "day": 12,
+    "hour": 10
+  },
+  "durationHours": 12,
+  "endOnFireOut": true,
+  "afterFireHours": 2,
+  "rules": {
+    "weatherEvents": false,
+    "fires": false,
+    "difficulty": "normal"
+  },
+  "startingCash": 200000,
+  "constraints": {
+    "noLoans": true
+  },
+  "city": {
+    "blocksAlong": 7,
+    "blocksAcross": 5,
+    "zoneMix": {
+      "residential": 0.6,
+      "commercial": 0.12,
+      "office": 0.08,
+      "industrial": 0.2
+    },
+    "farms": 2,
+    "occupancy": [0.75, 1],
+    "ageYears": [3, 20],
+    "condition": [60, 90],
+    "facilities": [
+      "shoppingCentre",
+      "roadsDepot",
+      "waterDepot",
+      "powerDepot",
+      "policeStation",
+      "healthCentre",
+      "school",
+      "wasteDepot",
+      "recyclingCentre",
+      "landfill"
+    ],
+    "gasPlants": 1,
+    "extraIntakes": 0,
+    "storage": "serviceReservoir",
+    "outskirts": ["fireStation"]
+  },
+  "objectives": [
+    {
+      "id": "contain",
+      "kind": "fireContained",
+      "label": "Fire put out",
+      "target": 90,
+      "points": 400
+    },
+    {
+      "id": "cm",
+      "kind": "customerMinutes",
+      "label": "Customer-minutes lost",
+      "target": 20000,
+      "points": 300
+    },
+    {
+      "id": "cost",
+      "kind": "cost",
+      "label": "Final cost",
+      "target": 15000,
+      "points": 300
+    }
+  ],
+  "events": [
+    {
+      "afterHours": 0.25,
+      "kind": "fire",
+      "target": "shoppingCentre",
+      "intensity": 40,
+      "text": "Fire at the shopping centre! Shoppers are streaming out and smoke is rising over the high street."
+    }
+  ]
+}

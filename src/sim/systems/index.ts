@@ -13,6 +13,8 @@ import { pollutionSystem } from './pollution';
 import { servicesSystem } from './services';
 import { growthSystem } from './growth';
 import { incidentsSystem } from './incidents';
+import { kpiSystem } from './kpis';
+import { scenarioSystem } from './scenario';
 import { powerSystem } from './power';
 import { trafficSystem } from './traffic';
 import { waterSystem } from './water';
@@ -37,4 +39,6 @@ export const SYSTEMS: readonly SimSystem[] = [
   pollutionSystem,
   economySystem,
   happinessSystem,
+  kpiSystem,
+  scenarioSystem,
 ];

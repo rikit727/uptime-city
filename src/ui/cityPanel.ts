@@ -144,7 +144,7 @@ export class CityPanel {
         h('span', { class: 'muted' }, `${formatDuration(snap.minute - c.minute)} ago · `),
         c.text,
       );
-      row.addEventListener('click', () => this.actions.focusTile(c.tile));
+      if (c.tile >= 0) row.addEventListener('click', () => this.actions.focusTile(c.tile));
       el.append(row);
     }
 

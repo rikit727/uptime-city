@@ -12,7 +12,7 @@ Spec: `docs/BUILD_PROMPT.md`. Architecture: `ARCHITECTURE.md`. Conventions: `CLA
 | 4   | Asset condition, incidents, crews, work orders                         | **Done**    |
 | 5   | Traffic, roadworks, permits                                            | **Done**    |
 | 6   | Services, landmarks, events, pollution, economy, happiness, complaints | **Done**    |
-| 7   | Overlays, dashboard, menus and settings, scenarios, UI polish          | Not started |
+| 7   | Overlays, dashboard, menus and settings, scenarios, UI polish          | **Done**    |
 | 8   | Performance pass and final docs review                                 | Not started |
 
 ## Milestone 1: what exists
@@ -312,6 +312,62 @@ Spec: `docs/BUILD_PROMPT.md`. Architecture: `ARCHITECTURE.md`. Conventions: `CLA
   2 ms (:44), waste 2.9 ms (07:17), residents round 0.6 ms a tick for ~17 ticks,
   settlement 0.6 ms; none share a tick with each other or the power dispatch.
 
+## Milestone 7: what exists
+
+- Overlays (`overlays.ts`, `overlays.json`, `render/layers/overlay.ts`): power (powered,
+  no power, in reach of a substation, plant, lines, out of service), water pressure,
+  wastewater (sewer load against works capacity, overflowing, no works), traffic,
+  roadworks and permits (booked, under way, lane closed, road closed, clashes), asset
+  condition (worst asset per tile, facilities, failures), cover for fire, police,
+  health, schools and bins (out of reach marked), air, noise and land value. Ramps are
+  ColorBrewer/viridis families, categories Okabe-Ito; buildings dim; the overlay draws
+  on top. Overlay menu in the top bar (🗺), O / Shift+O cycle, a legend from the data.
+- Dashboard (Shift+D or 📊): stat tiles for supply interruptions, customer-minutes,
+  MTTR, congestion index, cash flow, happiness and fire response, each with a sparkline
+  of the daily history (hover or keyboard focus for a day's value), monthly accounts
+  and a table view. Daily KPIs are a new system (`kpis.ts`, 60 days kept).
+- Main menu at start and on F10 / Menu: Continue (autosave), New sandbox city (seed,
+  starting cash, difficulty, weather events, random fires), Scenarios (list, briefing,
+  start), Load, Settings, Help. Settings: resolution, shadows, cosmetic cars, grid,
+  autosave, pause in menus (default on), edge scroll, controls list. Difficulty
+  (`game.json`): failure, decay and income multipliers in `rules.difficulty`.
+- Scenarios (`scenario.ts`, `cityGen.ts`, `src/data/scenarios/`): a seeded city
+  generator (block grid on the wider bank, zone mix, farms, substations and lines,
+  waterworks by the river, sewage works, services, depots, landmarks, grown buildings,
+  age profile and condition), constraints (no loans, capital allowance, budget cap,
+  banned facilities), objectives with points and a score, timed events (messages,
+  weather, a fire, failures of the worst assets or a facility), an end (time or fire
+  out) and a results screen. Four scenarios:
+  - Heatwave: five hot days under a drought order (3 Ml/day, no new intakes) and a
+    treatment works trip on day 3. Hands-off loses (licence breached, supply drops);
+    a hosepipe ban alone still breaches; full restrictions (or more storage) win.
+  - Cold snap: seven bursts on an old network in four days; MTTR under 4 h 30 min.
+    Hands-off: about 6 h (score ~665); a 150% water budget alone got 4 h 45 min in an
+    earlier run, so it needs that and more crews or better priorities.
+  - Ageing network: 734 assets below 45% at the start; get to 250 within 30 days and
+    £1.8 m of works. Booking maintenance over half the map reaches ~300 for £1.6 m.
+  - Commercial fire: the shopping centre burns at 10:15; fire station on the outskirts.
+    Hands-off: out in 1 h 41 min, smoke costs ~£59k, score ~650; with isolation, a
+    cordon and evacuation: out in 33 min, score 1000.
+- Fire measures (`fireMeasure` command; inbox and inspector buttons): isolate power,
+  cordon (road closures, traffic diverts), evacuate (no smoke, no taxes while closed);
+  smoke exposure counted every 5 minutes; complaints.
+- Water restrictions (`setWaterRestriction`; budget panel): hosepipe ban (homes −15%),
+  irrigation ban (no mains irrigation, farm exports halve); each costs happiness.
+- UI polish: the toolbar is grouped with one group open at a time; side panels push the
+  toasts left and keep the inspector below them; scenario box bottom left (Shift+G
+  folds it); the clock stops while a dialog is open; firefighting orders no longer show
+  "done in 6944 days".
+- Saves: version 7 with a v6 → v7 migration (tested).
+- Tests (211, 26 new): city generator (works on both banks and several seeds, power and
+  water reach every building, deterministic, age profile), each scenario starts, timed
+  events, constraints, spending tracked, the commercial fire end to end with and
+  without measures, cordon closures, isolation and evacuation, a save mid-scenario
+  continuing identically, overlays (all paint, power, condition, cover out of reach,
+  roadworks), daily KPIs and their cap, difficulty, water restrictions, v6 migration.
+- Measured: generating a scenario takes 0.1–0.4 s; a 30-day scenario runs headless in
+  ~20 s (~0.5 ms a tick on a ~500-building city).
+
 ## In progress
 
 Nothing.
@@ -321,16 +377,21 @@ Nothing.
 - GitHub Pages must be enabled once in the repository settings
   (Settings → Pages → Source: GitHub Actions) before `deploy.yml` can publish.
 - The main JS chunk is ~600 kB (mostly Three.js); fine for now, revisit in M8.
-- Settings (shadows, edge scroll, autosave) are stored but only the grid has a
-  UI toggle (G). The settings panel arrives in M7. The weather-events rule
-  has no UI yet (M7 sandbox settings).
-- No main menu yet; the game opens on a new random-seed city (M7).
-- The game keeps running while a modal is open (decision 15).
+- Behind the main menu at start the game builds a throwaway random city (cheap, but
+  it is replaced as soon as the player picks something).
+- Scenario tuning was checked headlessly with simple strategies, not by full playtests;
+  the heatwave is won by one decision (full restrictions) and the ageing network may be
+  hard. Revisit with playtesting.
+- Generated cities are a regular grid; there is no organic street pattern or highway.
+- The scenario briefing opens after the city is built; there is no loading indicator
+  (generation takes well under half a second).
+- Overlays rebuild up to every 500 ms while layers change; on a full map the condition
+  and pollution overlays touch 16,384 tiles each rebuild (check in M8).
 - Buildings never redevelop to a higher density in place; re-zoning demolishes
   them.
 - Economy balance is a first pass: a small town with a stadium runs a deficit,
-  events pay for their preparations, gas power is profitable. Revisit with the
-  M7 scenarios.
+  events pay for their preparations, gas power is profitable. Generated scenario
+  cities of ~9,000 residents earn about £50–65k a day, so cash is rarely the limit.
 - Service facilities need power and water like businesses; placing them before
   the water supply raises "no water" toasts at once (the hospital is a priority
   customer).
@@ -338,8 +399,7 @@ Nothing.
   but not the coverage figures.
 - Land value and happiness use the services' served share, which updates hourly.
 - Random fires only start in grown buildings (decision 73). Fires do not spread
-  to neighbours; there is no power isolation, cordon or evacuation yet (the M7
-  commercial fire scenario needs them).
+  to neighbours. Fire measures act per fire; smoke does not drift with the wind.
 - Event road closures close every road tile beside the venue; trips that load
   there go unserved while it is closed.
 - The happiness chip reads "–" until the first residents round after people move
@@ -354,7 +414,6 @@ Nothing.
 - Cities from v2 saves lose water (and slowly occupancy) until the player
   builds an intake and treatment works; the migration only lays mains.
 - A sewage works without power counts all its inflow as spill.
-- The toolbar now has 42 tools and scrolls on short screens; tidy in M7.
 - Running many days at once from the console stacks "Autosaved." toasts.
 - Bursts in the same water network each count all of that network's dry
   customers (attribution by network, decision 50), so two bursts in one
@@ -372,7 +431,6 @@ Nothing.
   chosen, so it reads 1.00 for the first round after loading an M4 save.
 - Building a local road across an avenue replaces the avenue tile at the crossing
   (M1 road tool behaviour).
-- No condition overlay yet (M7 overlays); condition shows in the inspector.
 - Repairs are paid even when cash is negative; loans are the remedy.
 - `rebuildNetwork` takes about 2 ms on a dense power grid and runs on every
   cable fault and repair; make it incremental in M8 if it shows in profiles.
@@ -384,24 +442,15 @@ Nothing.
 
 ## Exact next step
 
-Start **milestone 7** (overlays, dashboard, menus and settings, scenarios, UI
-polish):
+Start **milestone 8** (performance pass and final docs review):
 
-1. Overlay switcher for power, water pressure, wastewater, traffic, condition,
-   coverage (per service kind, from `cache.services.minutes` and
-   `snapshot.city.serviceLevel`), pollution (air/noise from `state.pollution` via
-   `snapshot.city.pollution`), land value and roadworks; colour-blind safe ramps;
-   buildings dim (extend `render/layers` like the water and traffic overlays).
-2. KPI dashboard: supply interruptions, customer-minutes, MTTR, congestion index,
-   cash flow (`economy.history`, month ledger), happiness, fire response.
-3. Main menu (new game, load, scenarios, settings) and a settings panel
-   (graphics, shadows, autosave, controls list; sandbox: starting cash,
-   difficulty, weather events, random fires via `rules.fires`).
-4. Scenarios as JSON in `src/data/scenarios/` with a seeded city generator (size,
-   age profile, zone mix, network condition), constraints, objectives and timed
-   events: heatwave, cold snap, ageing network, commercial fire (use `startFire()`
-   on a shopping centre; add power isolation, cordon closures and evacuation).
-   Update CLAUDE.md's scenario guide.
-5. UI polish: toolbar grouping/collapse (42 tools), panels not overlapping,
-   pause while modals are open (decision 15).
-6. Tests, docs, PROGRESS.md.
+1. Profile a fully built 128×128 map (a sandbox city grown to ~7,000 buildings, and
+   the scenario cities) in Chromium: frame time, sim time per system, render layer
+   rebuilds (buildings, overlays, cars). Hold 60 fps and the 4 ms sim budget.
+2. Candidates from the notes above: slice the power dispatch on big maps, make
+   `rebuildNetwork` incremental, build the traffic trip table across ticks or move to a
+   junction-level graph, split the water solve's routing passes, and cheaper overlay
+   rebuilds (only changed tiles, or a DataTexture instead of instances).
+3. Bundle size: the main chunk is ~600 kB (Three.js); try manual chunks.
+4. Final review of README, ARCHITECTURE, CLAUDE, ROADMAP and PROGRESS against the code;
+   check every BUILD_PROMPT deliverable and test item is covered; recheck `npm audit`.

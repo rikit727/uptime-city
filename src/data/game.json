@@ -12,5 +12,30 @@
   },
   "calendar": {
     "daysPerSeason": 30
-  }
+  },
+  "difficulty": {
+    "//": "Sandbox difficulty: starting cash, asset failure and decay multipliers, and a multiplier on taxes and farm exports.",
+    "easy": {
+      "name": "Relaxed",
+      "startingCash": 400000,
+      "failureScale": 0.5,
+      "decayScale": 0.75,
+      "incomeScale": 1.15
+    },
+    "normal": {
+      "name": "Standard",
+      "startingCash": 250000,
+      "failureScale": 1,
+      "decayScale": 1,
+      "incomeScale": 1
+    },
+    "hard": {
+      "name": "Demanding",
+      "startingCash": 150000,
+      "failureScale": 1.6,
+      "decayScale": 1.25,
+      "incomeScale": 0.9
+    }
+  },
+  "kpiHistoryDays": 60
 }

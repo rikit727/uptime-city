@@ -4,6 +4,13 @@ export type { LoggedCommand, Revisions, SimSnapshot } from './simulation';
 export type { Command, CommandPlan, CommandResult, CommandType, Layer } from './commands';
 export type { SimEvent } from './events';
 export type { CityView } from './cityView';
+export type { ObjectiveStatus, ObjectiveView } from './scenario';
+export { SCENARIOS, scenarioStartMinute } from './scenario';
+export { TILE_OVERLAYS } from './overlays';
+export type { TileOverlayId } from './overlays';
+export { hasMeasure } from './fire';
+export type { Difficulty, FireMeasure, OverlayId } from './types';
+export type { CityParams } from './cityGen';
 export type { HappinessScores } from './happiness';
 export type { PollutionKind } from './pollution';
 export { EXPENSE_LINES, INCOME_LINES } from './state';
@@ -48,6 +55,10 @@ export type {
   WaterState,
   WaterStats,
   WeatherState,
+  DailyKpi,
+  KpiState,
+  ScenarioState,
+  ScenarioStatus,
 } from './state';
 export { serializeState, deserializeState } from './serialize';
 export type { SerializedState } from './serialize';

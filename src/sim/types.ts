@@ -99,6 +99,28 @@ export const EVENT_MEASURES: readonly EventMeasure[] = [
   'cleanup',
 ];
 
+/** Emergency measures at a fire (milestone 7). */
+export type FireMeasure = 'isolatePower' | 'cordon' | 'evacuate';
+export const FIRE_MEASURES: readonly FireMeasure[] = ['isolatePower', 'cordon', 'evacuate'];
+
+/** Sandbox difficulty (game.json `difficulty`). */
+export type Difficulty = 'easy' | 'normal' | 'hard';
+export const DIFFICULTIES: readonly Difficulty[] = ['easy', 'normal', 'hard'];
+
+/** Map overlays (one at a time). Coverage overlays are named after their service kind. */
+export type OverlayId =
+  | 'none'
+  | 'power'
+  | 'water'
+  | 'wastewater'
+  | 'traffic'
+  | 'condition'
+  | CoverageKind
+  | 'air'
+  | 'noise'
+  | 'landValue'
+  | 'roadworks';
+
 /** Tile assets: one per utility layer on a tile. */
 export type TileAssetLayer = 'road' | 'main' | 'line';
 export const TILE_ASSET_LAYERS: readonly TileAssetLayer[] = ['road', 'main', 'line'];

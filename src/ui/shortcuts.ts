@@ -24,7 +24,11 @@ export const CONTROL_ROWS: readonly ShortcutRow[] = [
   { keys: '9 / 0', action: 'River intake / water treatment works' },
   { keys: '- / =', action: 'Service reservoir / water tower' },
   { keys: 'C / Y', action: 'Booster pumping station / sewage treatment works' },
-  { keys: 'O', action: 'Cycle the overlays: water pressure, traffic, none' },
+  {
+    keys: 'O / Shift+O',
+    action:
+      'Next / previous overlay: power, water pressure, wastewater, traffic, roadworks, condition, service cover, pollution, land value',
+  },
   {
     keys: ';',
     action:
@@ -43,8 +47,11 @@ export const CONTROL_ROWS: readonly ShortcutRow[] = [
   },
   { keys: 'Shift+B', action: 'Budget: accounts, department budgets, taxes and loans' },
   { keys: 'Shift+N', action: 'City panel: happiness, events calendar and complaints' },
+  { keys: 'Shift+D', action: 'Dashboard: service KPIs over the last days' },
+  { keys: 'Shift+G', action: 'Scenario objectives (in a scenario)' },
   { keys: 'B', action: 'Bulldoze' },
-  { keys: 'Esc', action: 'Cancel drag, close panel, or back to Inspect' },
+  { keys: 'Esc', action: 'Cancel drag, close a dialog, or back to Inspect' },
+  { keys: 'F10', action: 'Main menu' },
   { keys: 'Space', action: 'Pause / resume' },
   { keys: ', / .', action: 'Slower / faster' },
   { keys: 'Ctrl+S', action: 'Save and load' },

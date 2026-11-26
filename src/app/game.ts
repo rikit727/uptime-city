@@ -19,6 +19,7 @@ import type { UiActions } from '../ui/hud';
 import { formatInt, formatMoney } from '../ui/format';
 import { CREW_NAMES, formatDuration } from '../ui/inbox';
 import { TOOLS } from '../ui/tools';
+import { OVERLAY_ORDER } from '../ui/overlayMenu';
 import type { ToolId } from '../ui/tools';
 import { CameraInput } from './cameraInput';
 import { TickScheduler } from './tickScheduler';
@@ -63,7 +64,8 @@ export class Game {
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
     window.addEventListener('keyup', (e) => this.cameraInput.keyUp(e.code));
     document.title = GAME_NAME;
-    if (!this.settings.seenHelp) this.hud.openHelp();
+    this.applySettings({});
+    this.hud.openMainMenu(false);
   }
 
   start(): void {
@@ -82,7 +84,9 @@ export class Game {
   }
 
   private stepSim(dt: number): void {
-    const due = this.scheduler.advance(dt);
+    // The clock stops while a dialog is open (setting), so menus never cost game time.
+    const paused = this.settings.pauseInMenus && this.hud.modalOpen;
+    const due = this.scheduler.advance(paused ? 0 : dt);
     const t0 = performance.now();
     let ran = 0;
     while (ran < due && performance.now() - t0 < SIM_BUDGET_MS) {
@@ -212,6 +216,13 @@ export class Game {
           ev.income >= ev.expenses ? 'good' : 'warn',
         );
         break;
+      case 'scenarioMessage':
+        this.toast(ev.text, ev.tone);
+        break;
+      case 'scenarioEnded':
+        this.toast(`Scenario over: score ${ev.score}.`, ev.won ? 'good' : 'warn');
+        this.hud.showResults(ev.won);
+        break;
       case 'irrigationLicenceReached':
         this.toast(
           `Farm irrigation licence used up (${ev.licenceMl} Ml today). Farms by the river switch to the mains or go without until midnight.`,
@@ -253,14 +264,29 @@ export class Game {
       void this.hud.openSaves();
       return;
     }
-    if (e.code === 'Escape') {
+    if (e.code === 'F10') {
+      e.preventDefault();
       if (this.hud.modalOpen) this.hud.closeModal();
+      else this.hud.openMainMenu();
+      return;
+    }
+    if (e.code === 'Escape') {
+      if (this.hud.overlays.open) this.hud.overlays.close();
+      else if (this.hud.modalOpen) this.hud.closeModal();
       else if (!this.tools.cancel()) this.tools.selectTool({ kind: 'inspect' });
       return;
     }
     if (this.hud.modalOpen || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.shiftKey && (e.code === 'KeyB' || e.code === 'KeyN')) {
-      this.hud.togglePanel(e.code === 'KeyB' ? 'budget' : 'city');
+    if (e.shiftKey && (e.code === 'KeyB' || e.code === 'KeyN' || e.code === 'KeyD')) {
+      this.hud.togglePanel(e.code === 'KeyB' ? 'budget' : e.code === 'KeyN' ? 'city' : 'dashboard');
+      return;
+    }
+    if (e.shiftKey && e.code === 'KeyG') {
+      this.hud.scenarioPanel.toggleFold();
+      return;
+    }
+    if (e.shiftKey && e.code === 'KeyO') {
+      this.cycleOverlay(-1);
       return;
     }
     const shiftTool = e.shiftKey ? TOOLS.find((t) => t.shift && t.code === e.code) : undefined;
@@ -354,17 +380,50 @@ export class Game {
           toast(`Could not import: ${(e as Error).message}`, 'error');
         }
       },
-      newGame: (seed: number) => {
-        this.replaceSim(Simulation.newGame({ seed, startingCash: GAME.startingCash }));
-        toast(`New city started (seed ${seed}).`, 'good');
+      newSandbox: (o) => {
+        this.replaceSim(Simulation.newGame(o));
+        toast(`New city started (seed ${o.seed}).`, 'good');
+        if (!this.settings.seenHelp) setTimeout(() => this.hud.openHelp(), 0);
       },
+      newScenario: (id: string) => {
+        try {
+          this.replaceSim(Simulation.newScenario(id));
+          this.renderer.rig.target.set(
+            this.sim.state.world.width * 0.3,
+            0,
+            this.sim.state.world.height / 2,
+          );
+          this.centreOnCity();
+        } catch (e) {
+          toast(`Could not start the scenario: ${(e as Error).message}`, 'error');
+        }
+      },
+      continueGame: async () => {
+        try {
+          const raw = await readSlot(AUTOSAVE_SLOT);
+          if (!raw) throw new Error('There is no autosave yet.');
+          this.replaceSim(simulationFromSave(parseSaveFile(raw)));
+          this.centreOnCity();
+          toast('City loaded.', 'good');
+        } catch (e) {
+          toast(`Could not load: ${(e as Error).message}`, 'error');
+        }
+      },
+      hasAutosave: async () => {
+        try {
+          return (await readSlot(AUTOSAVE_SLOT)) !== null;
+        } catch {
+          return false;
+        }
+      },
+      settings: () => ({ ...this.settings }),
+      changeSettings: (patch) => this.applySettings(patch),
       setGrid: (v: boolean) => {
         this.updateSettings({ showGrid: v });
         this.renderer.setGridVisible(v);
       },
       helpClosed: () => this.updateSettings({ seenHelp: true }),
-      toggleOverlay: (id: 'water' | 'traffic') =>
-        this.setOverlay(this.renderer.overlay === id ? 'none' : id),
+      toggleOverlay: (id: OverlayId) => this.setOverlay(this.renderer.overlay === id ? 'none' : id),
       setWorksOptions: (patch) => this.tools.setWorksOptions(patch),
       dispatch: (cmd: Command) => {
         const r = this.sim.dispatch(cmd);
@@ -389,10 +448,38 @@ export class Game {
     this.hud.setOverlay(id);
   }
 
-  /** O: water pressure → traffic → none. */
-  private cycleOverlay(): void {
-    const order: OverlayId[] = ['none', 'water', 'traffic'];
-    this.setOverlay(order[(order.indexOf(this.renderer.overlay) + 1) % order.length]!);
+  /** O / Shift+O: the next or previous overlay (OVERLAY_ORDER, wrapping through none). */
+  private cycleOverlay(step = 1): void {
+    const order = OVERLAY_ORDER;
+    const k = order.indexOf(this.renderer.overlay);
+    this.setOverlay(order[(k + step + order.length) % order.length]!);
+  }
+
+  /** Point the camera at the middle of the built-up area (scenarios, loaded games). */
+  private centreOnCity(): void {
+    const b = this.sim.state.buildings;
+    if (b.length === 0) return;
+    let sx = 0;
+    let sy = 0;
+    for (const x of b) {
+      sx += x.x;
+      sy += x.y;
+    }
+    const rig = this.renderer.rig;
+    rig.target.set(sx / b.length, 0, sy / b.length);
+    rig.distance = Math.max(rig.distance, 70);
+    rig.apply();
+  }
+
+  /** Change settings, save them and apply them. */
+  private applySettings(patch: Partial<Settings>): void {
+    this.updateSettings(patch);
+    const s = this.settings;
+    this.renderer.setShadows(s.shadows);
+    this.renderer.setGridVisible(s.showGrid);
+    this.renderer.setPixelRatioCap(s.pixelRatio);
+    this.renderer.setCarsVisible(s.cars);
+    this.cameraInput.edgeScroll = s.edgeScroll;
   }
 
   private toast(msg: string, kind: 'info' | 'good' | 'warn' | 'error' = 'info'): void {

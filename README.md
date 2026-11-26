@@ -46,6 +46,14 @@ Open the site in Chrome or Edge and use the install icon in the address bar
 (or the browser menu → _Install Uptime City_). On iOS Safari use Share → _Add
 to Home Screen_. After the first visit the game works offline.
 
+## Playing
+
+The game opens on the main menu: start a sandbox city (seed, starting cash,
+difficulty, weather events, random fires), pick one of four scenarios (heatwave,
+cold snap, ageing network, commercial fire), load a save or change the settings
+(resolution, shadows, cosmetic cars, autosave, pause in menus, controls list).
+F10 or the _Menu_ button opens it again.
+
 ## Saves
 
 Three save slots plus an autosave at the start of each game day, stored in
@@ -57,9 +65,11 @@ and _Import_ to load one.
 Press **H** in game for the full list. Highlights: WASD to pan, Q/E rotate,
 mouse wheel zoom, 1–3 roads, 4–8 zones, P/T power lines, U substation,
 N/L/V/M power stations and storage, J/K water mains, 9/0 intake and treatment
-works, -/= reservoir and water tower, C booster, Y sewage works, O cycles the
-water pressure and traffic overlays, ; plan maintenance, Shift+1/2/3 depots, ` incident inbox,
-B bulldoze, Space pause, Ctrl+S saves.
+works, -/= reservoir and water tower, C booster, Y sewage works, O / Shift+O
+cycle the map overlays (power, water pressure, wastewater, traffic, roadworks,
+condition, service cover, pollution, land value), ; plan maintenance,
+Shift+1/2/3 depots, ` incident inbox, Shift+B budget, Shift+N city panel,
+Shift+D dashboard, B bulldoze, Space pause, Ctrl+S saves, F10 main menu.
 
 ## Docs
 

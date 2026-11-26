@@ -362,6 +362,28 @@ describe('migrations', () => {
     loaded.step(120);
   });
 
+  it('upgrades a version 6 save (milestone 6): difficulty, fire measures, KPIs, scenario', () => {
+    const sim = testSim();
+    poweredTown(sim);
+    sim.step(90);
+    const cur = createSaveFile(sim, 'v6');
+    const st = JSON.parse(JSON.stringify(cur.state)) as Record<string, unknown>;
+    delete st.kpis;
+    delete st.scenario;
+    st.rules = { weatherEvents: true, fires: true };
+    st.water = { ...(st.water as object) };
+    delete (st.water as Record<string, unknown>).restriction;
+    const save = parseSaveFile(JSON.stringify({ ...cur, version: 6, state: st }));
+    expect(save.version).toBe(CURRENT_SAVE_VERSION);
+    const s = simulationFromSave(save).state;
+    expect(s.rules.difficulty).toBe('normal');
+    expect(s.rules.licenceFactor).toBe(1);
+    expect(s.water.restriction).toBe(0);
+    expect(s.kpis.days).toEqual([]);
+    expect(s.kpis.today.incidents).toBe(sim.state.assets.kpi.incidents);
+    expect(s.scenario).toBeNull();
+  });
+
   it('runs each step in order up to the target version', () => {
     const migrations = {
       1: (s: { version: number }) => ({ ...s, version: 2, a: 1 }),

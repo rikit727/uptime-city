@@ -4,10 +4,11 @@
  */
 import { PCFSoftShadowMap, Plane, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from 'three';
 import { daylight } from '../sim';
-import type { SimSnapshot } from '../sim';
+import type { OverlayId, SimSnapshot } from '../sim';
 import { CameraRig } from './cameraRig';
 import { BuildingLayer } from './layers/buildings';
 import { CrewLayer } from './layers/crews';
+import { OverlayLayer } from './layers/overlay';
 import { PowerLayer } from './layers/power';
 import { PreviewLayer } from './layers/preview';
 import type { PreviewTiles } from './layers/preview';
@@ -20,8 +21,7 @@ import { Lighting } from './lighting';
 
 export type { PreviewTiles } from './layers/preview';
 
-/** Map overlays (one at a time; buildings and zoning dim while one is shown). */
-export type OverlayId = 'none' | 'water' | 'traffic';
+export type { OverlayId } from '../sim';
 
 export class GameRenderer {
   readonly renderer: WebGLRenderer;
@@ -36,6 +36,8 @@ export class GameRenderer {
   private readonly water: WaterLayer;
   private readonly crews: CrewLayer;
   private readonly traffic: TrafficLayer;
+  private readonly overlayLayer: OverlayLayer;
+  private overlayId: OverlayId = 'none';
   private readonly preview: PreviewLayer;
   private readonly raycaster = new Raycaster();
   private readonly groundPlane = new Plane(new Vector3(0, 1, 0), 0);
@@ -65,6 +67,7 @@ export class GameRenderer {
     this.crews = new CrewLayer();
     this.traffic = new TrafficLayer(mapWidth);
     this.preview = new PreviewLayer(mapWidth, mapHeight);
+    this.overlayLayer = new OverlayLayer(mapWidth * mapHeight);
     this.scene.add(
       this.terrain.group,
       this.zones.group,
@@ -74,6 +77,7 @@ export class GameRenderer {
       this.water.group,
       this.crews.group,
       this.traffic.group,
+      this.overlayLayer.group,
       this.preview.group,
     );
     this.resize();
@@ -97,14 +101,27 @@ export class GameRenderer {
 
   /** Show one overlay (or none); buildings and zoning dim while one is shown. */
   setOverlay(id: OverlayId): void {
+    this.overlayId = id;
     this.water.setVisible(id === 'water');
     this.traffic.setOverlay(id === 'traffic');
+    this.overlayLayer.setOverlay(id);
     this.buildings.setDim(id !== 'none');
     this.zones.setDim(id !== 'none');
   }
 
   get overlay(): OverlayId {
-    return this.water.visible ? 'water' : this.traffic.overlayVisible ? 'traffic' : 'none';
+    return this.overlayId;
+  }
+
+  /** Render resolution: device pixels per CSS pixel, capped at `cap` (settings). */
+  setPixelRatioCap(cap: number): void {
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, cap));
+    this.resize();
+  }
+
+  /** Show or hide the cosmetic cars (settings). */
+  setCarsVisible(on: boolean): void {
+    this.traffic.setCarsVisible(on);
   }
 
   /** Sim speed multiplier (0 = paused) for cosmetic animation such as cars. */
@@ -145,6 +162,7 @@ export class GameRenderer {
     this.water.invalidate();
     this.crews.invalidate();
     this.traffic.invalidate();
+    this.overlayLayer.invalidate();
     this.preview.show(null);
   }
 
@@ -159,6 +177,7 @@ export class GameRenderer {
     this.water.update(snap, performance.now());
     this.crews.update(snap, performance.now());
     this.traffic.update(snap, dt, performance.now());
+    this.overlayLayer.update(snap, performance.now());
     this.lighting.update(snap.minute, snap.weather.cloud);
     this.renderer.render(this.scene, this.rig.camera);
   }

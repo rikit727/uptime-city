@@ -9,6 +9,8 @@ import type { Command, CommandPlan, CommandResult, Layer } from './commands';
 import type { SimEvent } from './events';
 import { hashState } from './hash';
 import { createInitialState } from './state';
+import { createScenarioState } from './scenario';
+import { scenarioDef } from './data';
 import type { NewGameOptions, SimState } from './state';
 import { SYSTEMS } from './systems';
 import type { TickContext } from './systems';
@@ -21,6 +23,8 @@ import type {
   EconomyState,
   Fire,
   HappinessState,
+  KpiState,
+  ScenarioState,
   ServicesState,
   Building,
   Crew,
@@ -97,6 +101,9 @@ export interface SimSnapshot {
   readonly events: readonly CityEvent[];
   readonly complaints: readonly Complaint[];
   readonly happiness: Readonly<HappinessState>;
+  /** Daily KPI history (dashboard) and the scenario in progress (null in a sandbox game). */
+  readonly kpis: Readonly<KpiState>;
+  readonly scenario: Readonly<ScenarioState> | null;
   /** Questions about the city (service levels, land value, pollution, ...). */
   readonly city: CityView;
 }
@@ -129,6 +136,11 @@ export class Simulation {
 
   static newGame(opts: NewGameOptions): Simulation {
     return new Simulation(createInitialState(opts));
+  }
+
+  /** A new game of a scenario (src/data/scenarios/<id>.json). */
+  static newScenario(id: string): Simulation {
+    return new Simulation(createScenarioState(scenarioDef(id)));
   }
 
   /** Validate and apply a command immediately. It is logged at the current tick. */
@@ -207,6 +219,8 @@ export class Simulation {
       events: s.events,
       complaints: s.complaints,
       happiness: s.happiness,
+      kpis: s.kpis,
+      scenario: s.scenario,
       city: this.view,
     };
   }

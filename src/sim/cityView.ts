@@ -7,8 +7,8 @@
 import { measureCost } from './cityEvents';
 import { streetName } from './complaints';
 import { backlog, dailyTaxes, dailyUpkeep, dutyCrews, loanPayment, totalDebt } from './economy';
-import { appliancesOnSite, fireOf, waterShare } from './fire';
-import { homeFactors, homeHappiness } from './happiness';
+import { appliancesOnSite, fireMeasureCost, fireOf, waterShare } from './fire';
+import { homeFactors, homeHappiness, restrictionPenalty } from './happiness';
 import type { HappinessScores } from './happiness';
 import { landValueOf, landValueOfTile, pollutionAt } from './pollution';
 import type { PollutionKind } from './pollution';
@@ -21,7 +21,11 @@ import {
   wasteTonnes,
 } from './services';
 import type { AssetRef, Building, CityEvent, Fire, SimState } from './state';
-import type { CoverageKind, CrewType, EventMeasure } from './types';
+import type { CoverageKind, CrewType, EventMeasure, FireMeasure, OverlayId } from './types';
+import { overlayValues } from './overlays';
+import { containmentMinutes, evaluateScenario, scenarioScore } from './scenario';
+import type { ObjectiveView } from './scenario';
+import { buildingsOffSupply } from './kpis';
 
 export interface CityView {
   serviceLevel(b: Building, kind: CoverageKind): number;
@@ -49,6 +53,19 @@ export interface CityView {
   measureCost(e: CityEvent, m: EventMeasure): number;
   totalDebt(): number;
   loanPayment(amount: number): number;
+  /** Fill one value per tile for a map overlay (see overlays.ts); false if it has its own layer. */
+  overlay(id: OverlayId, out: Float32Array): boolean;
+  /** The running scenario's objectives and score (empty / zero in a sandbox game). */
+  objectives(): ObjectiveView[];
+  score(): { score: number; max: number };
+  /** Minutes the scenario's fire has burned (-1 if none yet). */
+  containmentMinutes(): number;
+  /** Cost of a fire measure now. */
+  fireMeasureCost(f: Fire, m: FireMeasure): number;
+  /** Buildings without water or power now. */
+  buildingsOffSupply(): number;
+  /** Points off happiness for water restrictions in force. */
+  restrictionPenalty(): number;
 }
 
 export function cityView(state: SimState): CityView {
@@ -75,5 +92,12 @@ export function cityView(state: SimState): CityView {
     measureCost,
     totalDebt: () => totalDebt(state),
     loanPayment,
+    overlay: (id, out) => overlayValues(state, id, out),
+    objectives: () => evaluateScenario(state),
+    score: () => scenarioScore(state),
+    containmentMinutes: () => (state.scenario ? containmentMinutes(state, state.scenario) : -1),
+    fireMeasureCost: (f, m) => fireMeasureCost(state, f, m),
+    buildingsOffSupply: () => buildingsOffSupply(state),
+    restrictionPenalty: () => restrictionPenalty(state),
   };
 }

@@ -70,5 +70,9 @@ export type SimEvent =
       litter: boolean;
       revenue: number;
     }
+  /** A scenario's timed message. */
+  | { type: 'scenarioMessage'; text: string; tone: 'info' | 'good' | 'warn' | 'error' }
+  /** The scenario is over (score out of its objectives' points). */
+  | { type: 'scenarioEnded'; won: boolean; score: number }
   /** A 30-day month's accounts have been filed. */
   | { type: 'monthClosed'; month: number; income: number; expenses: number; cash: number };

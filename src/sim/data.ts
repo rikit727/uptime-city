@@ -15,7 +15,13 @@ import trafficJson from '../data/traffic.json';
 import waterJson from '../data/water.json';
 import weatherJson from '../data/weather.json';
 import zonesJson from '../data/zones.json';
+import overlaysJson from '../data/overlays.json';
+import heatwaveScenario from '../data/scenarios/heatwave.json';
+import coldSnapScenario from '../data/scenarios/coldSnap.json';
+import ageingNetworkScenario from '../data/scenarios/ageingNetwork.json';
+import commercialFireScenario from '../data/scenarios/commercialFire.json';
 import { SEASON_ORDER } from './types';
+import type { CityParams } from './cityGen';
 import type {
   CityEventType,
   CoverageKind,
@@ -23,12 +29,14 @@ import type {
   Department,
   DensityId,
   DepotId,
+  Difficulty,
   FacilityId,
   FacilityKind,
   FieldStyle,
   IncidentKind,
   LineTypeId,
   MainTypeId,
+  OverlayId,
   PowerFacilityId,
   RoadClassId,
   SeasonId,
@@ -51,6 +59,20 @@ export interface GameConfig {
   agriculturalEdgeBand: number;
   river: { minWidth: number; maxWidth: number };
   calendar: { daysPerSeason: number };
+  difficulty: Record<Difficulty, DifficultyDef>;
+  /** Days of daily KPIs kept for the dashboard. */
+  kpiHistoryDays: number;
+}
+
+export interface DifficultyDef {
+  name: string;
+  startingCash: number;
+  /** Multiplies every asset's daily failure chance. */
+  failureScale: number;
+  /** Multiplies asset decay. */
+  decayScale: number;
+  /** Multiplies council tax, business rates and farm exports. */
+  incomeScale: number;
 }
 
 export interface RoadClassDef {
@@ -84,7 +106,9 @@ export interface DensityDef {
   name: string;
 }
 
-export const GAME: GameConfig = gameJson;
+export const GAME: GameConfig = gameJson as unknown as GameConfig;
+
+export const difficultyDef = (d: Difficulty): DifficultyDef => GAME.difficulty[d];
 
 // ---- weather --------------------------------------------------------------
 
@@ -380,6 +404,10 @@ export interface WaterConfig {
   mains: MainTypeDef[];
   mainWaterCostMultiplier: number;
   mainDemolishCostPerTile: number;
+  restrictions: {
+    hosepipeBan: { residentialSaving: number; happinessPenalty: number };
+    irrigationBan: { exportFactor: number; happinessPenalty: number };
+  };
   facilities: WaterFacilityDef[];
 }
 
@@ -660,6 +688,28 @@ export interface ServicesConfig {
     gutsCondition: number;
     smokeAir: number;
     targetResponseMinutes: number;
+    measures: {
+      isolatePower: {
+        name: string;
+        cost: number;
+        liveSuppressionFactor: number;
+        liveGrowthFactor: number;
+      };
+      cordon: {
+        name: string;
+        cost: number;
+        radiusTiles: number;
+        noCordonSuppressionFactor: number;
+        peoplePerPcu: number;
+      };
+      evacuate: { name: string; costPerBuilding: number; radiusTiles: number };
+    };
+    smoke: {
+      radiusTiles: number;
+      minIntensity: number;
+      complaintExposure: number;
+      costPerPersonMinute: number;
+    };
   };
   events: CityEventDef[];
   eventMeasures: {
@@ -841,3 +891,121 @@ for (const t of BUILDINGS.types) {
     grownByZoneDensity.set(key, list);
   }
 }
+
+// ---- scenarios (milestone 7) ----------------------------------------------------------
+
+/** Objective kinds (scenario.ts `evaluateOne`). */
+export type ScenarioObjectiveKind =
+  | 'supplyShare'
+  | 'noLicenceBreach'
+  | 'mttr'
+  | 'backlog'
+  | 'budget'
+  | 'worksBudget'
+  | 'cashAbove'
+  | 'customerMinutes'
+  | 'fireContained'
+  | 'happiness'
+  | 'cost';
+
+export interface ScenarioObjectiveDef {
+  id: string;
+  kind: ScenarioObjectiveKind;
+  label: string;
+  /** Target value: a share (supplyShare), minutes (mttr, fireContained), a count, £ or points. */
+  target: number;
+  /** Backlog: the condition (%) below which an asset counts. */
+  below?: number;
+  /** Points when met (default 100). */
+  points?: number;
+}
+
+export interface ScenarioEventDef {
+  /** Game hours after the start. Events must be listed in time order. */
+  afterHours: number;
+  kind: 'message' | 'weather' | 'fire' | 'failures';
+  text?: string;
+  tone?: 'info' | 'good' | 'warn' | 'error';
+  /** weather: the event and how many days it lasts. */
+  event?: WeatherEventId;
+  days?: number;
+  /** fire: the facility id of the building that catches fire, and its intensity when reported;
+   *  failures: a facility that trips out instead of the worst tile assets. */
+  target?: FacilityId;
+  intensity?: number;
+  /** failures: how many of the worst assets of a layer fail. */
+  layer?: TileAssetLayer;
+  count?: number;
+}
+
+export interface ScenarioDef {
+  id: string;
+  name: string;
+  /** One line for the scenario list, and the briefing shown before it starts. */
+  summary: string;
+  briefing: string[];
+  seed: number;
+  start: { year: number; season: SeasonId; day: number; hour: number };
+  durationHours: number;
+  /** End early once the scenario's fire is out, `afterFireHours` later. */
+  endOnFireOut?: boolean;
+  afterFireHours?: number;
+  rules: {
+    weatherEvents: boolean;
+    fires: boolean;
+    difficulty: Difficulty;
+    /** Abstraction licence multiplier (a drought order); default 1. */
+    licenceFactor?: number;
+  };
+  startingCash: number;
+  budgets?: Partial<Record<Department, number>>;
+  constraints: {
+    noLoans?: boolean;
+    /** Cap on capital spending (roads, zoning, facilities, lines, mains) since the start, £. */
+    capitalLimit?: number;
+    /** Highest department budget level allowed (e.g. 1.2). */
+    maxBudget?: number;
+    /** Facilities that may not be built, and why. */
+    noNewFacilities?: FacilityId[];
+    noNewFacilitiesReason?: string;
+  };
+  city: CityParams;
+  objectives: ScenarioObjectiveDef[];
+  events: ScenarioEventDef[];
+}
+
+export const SCENARIOS: readonly ScenarioDef[] = [
+  heatwaveScenario,
+  coldSnapScenario,
+  ageingNetworkScenario,
+  commercialFireScenario,
+] as unknown as ScenarioDef[];
+
+export const scenarioDef = (id: string): ScenarioDef =>
+  must(
+    SCENARIOS.find((s) => s.id === id),
+    `scenario ${id}`,
+  );
+
+// ---- overlays (milestone 7) -----------------------------------------------------------
+
+export interface OverlayDef {
+  id: Exclude<OverlayId, 'none'>;
+  name: string;
+  group: string;
+  /** Colour stops for values 0..1 (none for purely categorical overlays). */
+  ramp?: string[];
+  rampLabels?: [number, string][];
+  /** Category colours: overlayValues() writes -(k + 1) for category k. */
+  categories?: { colour: string; label: string }[];
+}
+
+export const OVERLAYS: readonly OverlayDef[] = (
+  overlaysJson as unknown as { overlays: OverlayDef[] }
+).overlays;
+
+export const overlayDef = (id: Exclude<OverlayId, 'none'>): OverlayDef =>
+  must(
+    OVERLAYS.find((o) => o.id === id),
+    `overlay ${id}`,
+  );

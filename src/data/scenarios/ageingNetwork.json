@@ -1,0 +1,101 @@
+{
+  "id": "ageingNetwork",
+  "name": "Ageing network",
+  "summary": "Inherit a run-down city whose roads, pipes and cables are falling apart. Clear the maintenance backlog within budget.",
+  "briefing": [
+    "The council you have taken over has put off maintenance for years. Much of the network is in poor condition and failing more often every week.",
+    "Within 30 days, bring the number of assets below 45% condition down to 250 or fewer, and spend no more than \u00a31,800,000 on maintenance and repairs doing it. Planned works are paid when booked, so watch the cash too.",
+    "Plan maintenance with the Plan maintenance tool (;) or from the inspector. Night works cost more but disrupt less; combine works on the same street to save money. Repairs to failures count against the budget too."
+  ],
+  "seed": 31337,
+  "start": {
+    "year": 25,
+    "season": "spring",
+    "day": 1,
+    "hour": 7
+  },
+  "durationHours": 720,
+  "rules": {
+    "weatherEvents": true,
+    "fires": true,
+    "difficulty": "normal"
+  },
+  "startingCash": 1200000,
+  "constraints": {
+    "noLoans": true,
+    "capitalLimit": 200000
+  },
+  "city": {
+    "blocksAlong": 7,
+    "blocksAcross": 5,
+    "zoneMix": {
+      "residential": 0.6,
+      "commercial": 0.12,
+      "office": 0.08,
+      "industrial": 0.2
+    },
+    "farms": 3,
+    "occupancy": [0.75, 1],
+    "ageYears": [18, 40],
+    "condition": [20, 65],
+    "facilities": [
+      "roadsDepot",
+      "waterDepot",
+      "powerDepot",
+      "fireStation",
+      "policeStation",
+      "healthCentre",
+      "school",
+      "wasteDepot",
+      "recyclingCentre",
+      "landfill"
+    ],
+    "gasPlants": 1,
+    "extraIntakes": 0,
+    "storage": "serviceReservoir"
+  },
+  "objectives": [
+    {
+      "id": "backlog",
+      "kind": "backlog",
+      "label": "Assets below 45% condition",
+      "target": 250,
+      "below": 45,
+      "points": 600
+    },
+    {
+      "id": "works",
+      "kind": "worksBudget",
+      "label": "Spent on maintenance and repairs",
+      "target": 1800000,
+      "points": 300
+    },
+    {
+      "id": "happy",
+      "kind": "happiness",
+      "label": "Happiness at the end",
+      "target": 60,
+      "points": 100
+    }
+  ],
+  "events": [
+    {
+      "afterHours": 0,
+      "kind": "message",
+      "tone": "info",
+      "text": "Welcome to the council. The maintenance backlog is the worst in the region: open the inspector on any road, main or line to see its condition."
+    },
+    {
+      "afterHours": 240,
+      "kind": "message",
+      "tone": "info",
+      "text": "Ten days in. Check the condition overlay (O) to find what is left."
+    },
+    {
+      "afterHours": 600,
+      "kind": "message",
+      "tone": "warn",
+      "text": "Five days to go."
+    }
+  ]
+}

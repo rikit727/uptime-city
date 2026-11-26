@@ -15,6 +15,7 @@ import {
   failureProbability,
   tileClassAt,
 } from './assets';
+import { difficultyDef } from './data';
 import type { SimEvent } from './events';
 import { decayFactor } from './ledger';
 import { incidentOnAsset, openIncident, orderOnAsset } from './incidents';
@@ -36,6 +37,7 @@ function canFail(state: SimState, ref: AssetRef): boolean {
 export function visitTile(state: SimState, t: number, emit: (e: SimEvent) => void): boolean {
   const w = state.world;
   const event = state.weather.event?.id ?? null;
+  const fscale = difficultyDef(state.rules.difficulty).failureScale;
   let failed = false;
   for (const layer of TILE_ASSET_LAYERS) {
     const cls = tileClassAt(w, layer, t);
@@ -47,7 +49,7 @@ export function visitTile(state: SimState, t: number, emit: (e: SimEvent) => voi
     w.condition[layer][t] = cond;
     const ref: AssetRef = { layer, id: t };
     if (!canFail(state, ref)) continue;
-    if (state.rng.next() < failureProbability(cls, cond / CONDITION_SCALE, event)) {
+    if (state.rng.next() < failureProbability(cls, cond / CONDITION_SCALE, event) * fscale) {
       openIncident(state, cls.failure, ref, t, emit);
       failed = true;
     }
@@ -63,7 +65,7 @@ export function visitTile(state: SimState, t: number, emit: (e: SimEvent) => voi
       const ref: AssetRef = { layer: 'facility', id: b.id };
       if (
         canFail(state, ref) &&
-        state.rng.next() < failureProbability(fa.cls, b.condition, event)
+        state.rng.next() < failureProbability(fa.cls, b.condition, event) * fscale
       ) {
         openIncident(state, 'facilityFault', ref, t, emit);
         failed = true;

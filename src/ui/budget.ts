@@ -5,6 +5,7 @@
  * backlog per department. Reads the snapshot; acts only through commands.
  */
 import {
+  WATER,
   DEPARTMENTS,
   ECONOMY,
   EXPENSE_LINES,
@@ -68,7 +69,7 @@ export class BudgetPanel {
   update(snap: SimSnapshot): void {
     if (!this.open) return;
     const e = snap.economy;
-    const key = `${Math.floor(snap.minute / 60)}:${snap.cash}:${JSON.stringify(e.budgets)}:${JSON.stringify(e.taxRates)}:${e.loans.length}`;
+    const key = `${Math.floor(snap.minute / 60)}:${snap.cash}:${JSON.stringify(e.budgets)}:${JSON.stringify(e.taxRates)}:${e.loans.length}:${snap.water.restriction}`;
     if (key === this.key) return;
     this.key = key;
     this.render(snap);
@@ -164,6 +165,28 @@ export class BudgetPanel {
         ),
       );
     }
+
+    el.append(h('h4', {}, 'Water restrictions'));
+    const levels = ['None', 'Hosepipe ban', 'Hosepipe and irrigation ban'];
+    const help = [
+      'Normal water use.',
+      `Homes use ${Math.round(WATER.restrictions.hosepipeBan.residentialSaving * 100)}% less water; residents are less happy.`,
+      'As well, farms on the mains stop irrigating: their exports halve.',
+    ];
+    const cur = snap.water.restriction;
+    const row = h('div', { class: 'level-row' });
+    levels.forEach((label, lvl) => {
+      const b = h(
+        'button',
+        { class: `small${lvl === cur ? ' active' : ''}`, title: help[lvl]! },
+        label,
+      );
+      b.addEventListener('click', () =>
+        this.actions.dispatch({ type: 'setWaterRestriction', level: lvl }),
+      );
+      row.append(b);
+    });
+    el.append(row, h('p', { class: 'muted small-text' }, help[cur] ?? ''));
 
     el.append(h('h4', {}, 'Tax rates'));
     for (const z of TAX_ZONES) {

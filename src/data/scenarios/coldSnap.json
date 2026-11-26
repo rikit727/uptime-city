@@ -1,0 +1,117 @@
+{
+  "id": "coldSnap",
+  "name": "Cold snap",
+  "summary": "Hard frost on an old network: mains burst one after another. Keep the mean time to repair down.",
+  "briefing": [
+    "A cold snap has set in. Frozen ground stresses old mains, and bursts will come thick and fast over the next four days.",
+    "Keep the mean time to repair under 4 hours 30 minutes: repairs since the start, with open ones counted at their age so far.",
+    "Crews come from depots and drive through the traffic. More depots, a bigger water budget (more crews on duty) and sensible priorities in the incident inbox (`) all help."
+  ],
+  "seed": 90210,
+  "start": {
+    "year": 12,
+    "season": "winter",
+    "day": 6,
+    "hour": 5
+  },
+  "durationHours": 96,
+  "rules": {
+    "weatherEvents": false,
+    "fires": false,
+    "difficulty": "normal"
+  },
+  "startingCash": 300000,
+  "constraints": {
+    "noLoans": true
+  },
+  "city": {
+    "blocksAlong": 7,
+    "blocksAcross": 5,
+    "zoneMix": {
+      "residential": 0.6,
+      "commercial": 0.12,
+      "office": 0.08,
+      "industrial": 0.2
+    },
+    "farms": 2,
+    "occupancy": [0.75, 1],
+    "ageYears": [15, 40],
+    "condition": [35, 75],
+    "facilities": [
+      "roadsDepot",
+      "waterDepot",
+      "powerDepot",
+      "fireStation",
+      "policeStation",
+      "healthCentre",
+      "school",
+      "wasteDepot",
+      "recyclingCentre",
+      "landfill"
+    ],
+    "gasPlants": 1,
+    "extraIntakes": 0,
+    "storage": "serviceReservoir"
+  },
+  "objectives": [
+    {
+      "id": "mttr",
+      "kind": "mttr",
+      "label": "Mean time to repair",
+      "target": 270,
+      "points": 500
+    },
+    {
+      "id": "cm",
+      "kind": "customerMinutes",
+      "label": "Customer-minutes lost",
+      "target": 5000000,
+      "points": 300
+    },
+    {
+      "id": "happy",
+      "kind": "happiness",
+      "label": "Happiness at the end",
+      "target": 50,
+      "points": 200
+    }
+  ],
+  "events": [
+    {
+      "afterHours": 0,
+      "kind": "weather",
+      "event": "coldSnap",
+      "days": 4
+    },
+    {
+      "afterHours": 0,
+      "kind": "message",
+      "tone": "warn",
+      "text": "Cold snap: the ground is freezing. Expect burst mains."
+    },
+    {
+      "afterHours": 1,
+      "kind": "failures",
+      "layer": "main",
+      "count": 3,
+      "tone": "error",
+      "text": "Three mains have burst overnight in the oldest part of the network."
+    },
+    {
+      "afterHours": 30,
+      "kind": "failures",
+      "layer": "main",
+      "count": 2,
+      "tone": "error",
+      "text": "Two more bursts as the frost bites again."
+    },
+    {
+      "afterHours": 60,
+      "kind": "failures",
+      "layer": "main",
+      "count": 2,
+      "tone": "error",
+      "text": "Another hard frost: two more mains have burst."
+    }
+  ]
+}

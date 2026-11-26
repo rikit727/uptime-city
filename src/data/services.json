@@ -56,7 +56,35 @@
     "damageOccupancy": 0.8,
     "gutsCondition": 20,
     "smokeAir": 0.3,
-    "targetResponseMinutes": 10
+    "targetResponseMinutes": 10,
+    "measures": {
+      "//": "Emergency measures at a fire (fireMeasure command). Without isolation, live electrics slow the firefighters and feed the fire; without a cordon, onlookers and traffic get in the way and breathe the smoke.",
+      "isolatePower": {
+        "name": "Isolate power",
+        "cost": 500,
+        "liveSuppressionFactor": 0.6,
+        "liveGrowthFactor": 1.25
+      },
+      "cordon": {
+        "name": "Cordon and diversions",
+        "cost": 1500,
+        "radiusTiles": 2,
+        "noCordonSuppressionFactor": 0.85,
+        "peoplePerPcu": 1.5
+      },
+      "evacuate": {
+        "name": "Evacuate nearby buildings",
+        "costPerBuilding": 150,
+        "radiusTiles": 5
+      }
+    },
+    "smoke": {
+      "//": "Smoke exposure: every 5 minutes, people in buildings within radiusTiles of a fire at minIntensity or more breathe intensity/100 person-minutes each per minute, unless evacuated. Each person-minute of smoke costs costPerPersonMinute (health care and claims) in a fire scenario's final cost.",
+      "radiusTiles": 5,
+      "minIntensity": 10,
+      "complaintExposure": 20000,
+      "costPerPersonMinute": 1.5
+    }
   },
   "events": [
     {

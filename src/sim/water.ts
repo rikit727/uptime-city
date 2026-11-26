@@ -248,6 +248,10 @@ export interface WaterFactors {
   temperature: number;
   /** Irrigation multiplier per field style (season, temperature, rain, heatwave). */
   irrigation: Record<FieldStyle, number>;
+  /** Household use multiplier under a hosepipe ban (1 otherwise). */
+  homes: number;
+  /** Farms may irrigate from the mains (no irrigation ban). */
+  mainsIrrigation: boolean;
 }
 
 function curve(zone: ZoneId, hour: number): number {
@@ -273,6 +277,8 @@ export function waterFactors(state: SimState): WaterFactors {
       pasture: heat * wave,
       glasshouse: heat * wave,
     },
+    homes: state.water.restriction >= 1 ? 1 - WATER.restrictions.hosepipeBan.residentialSaving : 1,
+    mainsIrrigation: state.water.restriction < 2,
   };
 }
 
@@ -281,7 +287,8 @@ const activity = (b: Building): number =>
 
 /** Household, business or process water use now, l/s (irrigation excluded). */
 export function useLps(b: Building, def: CustomerDef, f: WaterFactors): number {
-  return (def.waterLpd / 86400) * curve(def.zone, f.hour) * f.temperature * activity(b);
+  const homes = def.zone === 'residential' ? f.homes : 1;
+  return (def.waterLpd / 86400) * curve(def.zone, f.hour) * f.temperature * activity(b) * homes;
 }
 
 /** Farm irrigation or livestock watering now, l/s. */
@@ -541,7 +548,7 @@ export function solveNetwork(state: SimState, net: WaterNetwork): WaterNetworkRe
     const tile = serviceTile(w, b, def);
     if (tile < 0 || L.netAt[tile] !== net.id) continue;
     let q = useLps(b, def, f) * eventLoadFactor(state, b).water;
-    if (!irrigatesFromRiver(state, b, def)) q += irrigationLps(b, def, f);
+    if (!irrigatesFromRiver(state, b, def) && f.mainsIrrigation) q += irrigationLps(b, def, f);
     demand[tile] = demand[tile]! + q;
     D += q;
     customers.push({ b, tile });
@@ -738,10 +745,11 @@ export function finishRound(
       if (def.priority === 0) stats.priorityNoSupply++;
     } else if (onMains && w.pressure[tile]! < P.lowM) stats.lowPressure++;
 
-    const irr = irrigationLps(b, def, f);
+    const fromRiver = irrigatesFromRiver(state, b, def);
+    const irr = fromRiver || f.mainsIrrigation ? irrigationLps(b, def, f) : 0;
     if (irr > 0) {
       stats.irrigationLps += irr;
-      if (irrigatesFromRiver(state, b, def)) riverDraw += irr;
+      if (fromRiver) riverDraw += irr;
     }
     if (!farm && b.dryMinutes === 0) {
       const st = sewerTile(w, b, def);
@@ -815,6 +823,8 @@ export function finishRound(
       } else if (def.kind === 'intake') stats.licenceMlPerDay += def.licenceMlPerDay ?? 0;
     }
   }
+  // A drought order (scenarios) cuts what may be taken.
+  stats.licenceMlPerDay *= state.rules.licenceFactor;
   stats.farmLicenceMlPerDay = farmLicence;
   if (!ws.licenceBreached && ws.abstractedTodayMl > stats.licenceMlPerDay + 1e-9) {
     ws.licenceBreached = true;

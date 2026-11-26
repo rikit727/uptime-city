@@ -241,13 +241,58 @@ automatic maintenance, loans and fines are in `src/data/economy.json`. Pollution
 (grid, spread, sources, thresholds), land value, happiness weights and
 complaints (thresholds, cooldowns, street names) are in `src/data/city.json`.
 Building emissions are `pollution` on building types in `buildings.json`.
+Fire emergency measures and smoke are in `services.json` (`fire.measures`,
+`fire.smoke`), water restrictions in `water.json` (`restrictions`), sandbox
+difficulty levels and the dashboard history length in `game.json`.
 
-### A scenario (from milestone 7)
+### A scenario
 
-Not implemented yet. Planned: one JSON file per scenario in
-`src/data/scenarios/` with generator parameters (seed, size, age profile, zone
-mix, network condition), constraints, objectives and timed events. Update this
-section in milestone 7.
+One JSON file per scenario in `src/data/scenarios/<id>.json`, plus one import line
+and an entry in `SCENARIOS` in `src/sim/data.ts` (Vite's glob import is not
+available to the sim type-check, decision 92). Fields (`ScenarioDef` in `data.ts`):
+
+- `id`, `name`, `summary` (one line for the list), `briefing` (paragraphs).
+- `seed` (map and city), `start` (`year`, `season`, `day`, `hour`; the year must be
+  later than the oldest asset age), `durationHours`, optionally `endOnFireOut` and
+  `afterFireHours`.
+- `rules`: `weatherEvents`, `fires`, `difficulty`, optional `licenceFactor` (a
+  drought order on every intake's abstraction licence). `startingCash`, optional
+  `budgets` (department levels).
+- `constraints`: `noLoans`, `capitalLimit` (£ of capital spending since the start),
+  `maxBudget`, `noNewFacilities` (facility ids) with `noNewFacilitiesReason`.
+  Checked by `checkConstraints` (`scenario.ts`) inside `planCommand`.
+- `city`: generator parameters (`CityParams` in `cityGen.ts`): `blocksAlong`,
+  `blocksAcross`, `zoneMix`, `farms`, `occupancy`, `ageYears`, `condition`,
+  `facilities` (services, depots, landmarks placed in the service blocks),
+  optional `outskirts` (placed in the farthest block), `gasPlants`, `extraIntakes`,
+  `storage` (`serviceReservoir`, `waterTower` or null). The generator always builds
+  the road grid with feeder mains under avenues, substations, the gas plant, the
+  waterworks strip by the river and a sewage works.
+- `objectives`: `id`, `kind`, `label`, `target`, optional `points` (default 100) and
+  `below` (backlog). Kinds: `supplyShare` (average share of water customers
+  supplied, sampled every 15 minutes), `noLicenceBreach`, `mttr` (minutes, open
+  repairs counted at their age), `backlog` (assets below `below`%), `budget` (all
+  spending), `worksBudget` (maintenance and repairs), `cashAbove`, `customerMinutes`,
+  `fireContained` (minutes), `happiness`, `cost` (spending + taxes lost + smoke at
+  `fire.smoke.costPerPersonMinute`). A new kind needs a case in `evaluateOne`.
+- `events` (in time order): `afterHours`, `kind`: `message` (`text`, `tone`),
+  `weather` (`event`, `days`), `fire` (`target` facility id, `intensity`, `text`),
+  `failures` (`layer` and `count` of the worst tile assets, or a `target` facility
+  that trips out). A new kind needs a case in `runEvent`.
+
+Check a new scenario headlessly before shipping it: create it with
+`Simulation.newScenario(id)`, run it to the end with and without the intended
+player actions and compare the objectives (`evaluateScenario`). Add it to the list
+test in `tests/sim/scenario.test.ts`.
+
+### An overlay
+
+Tile overlays are data in `src/data/overlays.json` (`id`, `name`, `group`, `ramp`
+colour stops for 0..1 with `rampLabels`, and/or `categories`); use colour-blind-safe
+ramps (ColorBrewer, viridis) and Okabe-Ito categories. Add the id to `OverlayId`
+(`types.ts`) and its values to `overlayValues` (`src/sim/overlays.ts`: NaN = not
+drawn, 0..1 = ramp, -(k + 1) = category k). The renderer, the menu, the legend and
+the O key pick it up from the data.
 
 ## Debugging
 
@@ -255,6 +300,10 @@ section in milestone 7.
   (`.state`, `.hash()`, `.commandLog`, `.dispatch(cmd)`).
 - Settings live in `localStorage['uptime-city-settings']`; saves in IndexedDB
   `uptime-city-saves`.
+- Scenarios: `.state.scenario` (status, spending, samples, fire, score),
+  `.snapshot().city.objectives()`, `.state.kpis` (daily dashboard history).
+  `Simulation.newScenario('commercialFire')` builds one in a test or the console.
+- Overlays: `.snapshot().city.overlay('condition', new Float32Array(128 * 128))`.
 - Assets: `.state.incidents`, `.state.workOrders`, `.state.crews`,
   `.state.assets.kpi`, `.state.world.condition.main[tile]` (×100),
   `.state.cache.faults` (fault bits per tile, facilities offline). Press `
@@ -276,4 +325,5 @@ section in milestone 7.
   `waterSupplyCommands()`. To test a failure, call `openIncident()` directly
   rather than relying on the failure roll; `visitTile()` runs one day's decay.
   Set `state.rules.fires = false` when a test counts buildings; start a fire with
-  `startFire()` (`fire.ts`).
+  `startFire()` (`fire.ts`). For a whole working city in a test, use a scenario
+  (`Simulation.newScenario(id)`, ~0.2 s); the generator needs plenty of cash.

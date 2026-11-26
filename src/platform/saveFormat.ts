@@ -10,7 +10,7 @@ import { ASSETS, Simulation, TRAFFIC, dayOf, deserializeState, serializeState } 
 import type { SerializedState } from '../sim';
 
 export const SAVE_FORMAT = 'uptime-city-save';
-export const CURRENT_SAVE_VERSION = 6;
+export const CURRENT_SAVE_VERSION = 7;
 
 export interface SaveMeta {
   gameName: string;
@@ -322,6 +322,38 @@ export const MIGRATIONS: Record<number, (save: RawSave) => RawSave> = {
           sumFactors: { ...zeroFactors },
         },
         pollution: { air: [0, cells], noise: [0, cells] },
+      },
+    };
+  },
+  // v6 -> v7 (milestone 7): difficulty, fire measures, KPI history, scenario.
+  6: (save) => {
+    const state = save.state as Record<string, unknown>;
+    const fires = (state.fires as Record<string, unknown>[]).map((f) => ({
+      ...f,
+      measures: [],
+      evacuated: [],
+      smokeExposure: 0,
+    }));
+    return {
+      ...save,
+      version: 7,
+      state: {
+        ...state,
+        rules: { ...(state.rules as object), difficulty: 'normal', licenceFactor: 1 },
+        fires,
+        water: { ...(state.water as object), restriction: 0 },
+        kpis: {
+          today: {
+            incidents: Number(
+              ((state.assets as Record<string, unknown>).kpi as Record<string, unknown>).incidents,
+            ),
+            cash: Number(state.cash),
+            peakOff: 0,
+            congestion: 1,
+          },
+          days: [],
+        },
+        scenario: null,
       },
     };
   },

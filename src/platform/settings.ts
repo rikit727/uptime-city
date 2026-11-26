@@ -7,6 +7,12 @@ export interface Settings {
   edgeScroll: boolean;
   showGrid: boolean;
   seenHelp: boolean;
+  /** Highest device pixel ratio to render at (1, 1.5 or 2): lower is faster. */
+  pixelRatio: number;
+  /** Stop the clock while a dialog (menu, saves, help, settings) is open. */
+  pauseInMenus: boolean;
+  /** Show the cosmetic cars. */
+  cars: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -15,6 +21,9 @@ export const DEFAULT_SETTINGS: Settings = {
   edgeScroll: false,
   showGrid: true,
   seenHelp: false,
+  pixelRatio: 2,
+  pauseInMenus: true,
+  cars: true,
 };
 
 const KEY = `${STORAGE_PREFIX}-settings`;

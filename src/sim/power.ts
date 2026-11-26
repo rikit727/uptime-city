@@ -26,6 +26,7 @@ import type {
 } from './data';
 import { eventLoadFactor } from './cityEvents';
 import { centreOf, defOf, residentsOf } from './buildings';
+import { powerIsolated } from './fire';
 import type { SimEvent } from './events';
 import type { Building, PowerIsland, PowerStats, SimState } from './state';
 import { emptyPowerStats } from './state';
@@ -283,6 +284,8 @@ export function dispatchPower(state: SimState, emit: (e: SimEvent) => void): boo
     // (Water facilities are placed on clear land, so their centre tile is in the coverage map too.)
     const sub = net.coverage[tile] ?? 0;
     if (sub === 0 || (net.feedMW.get(sub) ?? 0) <= 0) continue;
+    // Isolated for firefighting: switched off at the substation.
+    if (state.fires.length > 0 && powerIsolated(state, b.id)) continue;
     const isl = islandIndex.get(net.islandOf.get(sub) ?? -1);
     if (isl === undefined) continue;
     const rank = ((((b.id % blocks) - offset + blocks) % blocks) + blocks) % blocks;

@@ -33,7 +33,14 @@ import {
   planTakeLoan,
 } from './economy';
 import { rejected } from './common';
+import { checkConstraints } from '../scenario';
 import { applyPlaceFacility, planPlaceFacility } from './facilities';
+import {
+  applyFireMeasure,
+  applySetWaterRestriction,
+  planFireMeasure,
+  planSetWaterRestriction,
+} from './fire';
 import { applyBuildLine, planBuildLine } from './power';
 import { applyBuildRoad, planBuildRoad } from './roads';
 import type { Command, CommandPlan } from './types';
@@ -67,6 +74,8 @@ const handlers: HandlerMap = {
   takeLoan: { plan: planTakeLoan, apply: applyTakeLoan },
   repayLoan: { plan: planRepayLoan, apply: applyRepayLoan },
   prepareEvent: { plan: planPrepareEvent, apply: applyPrepareEvent },
+  fireMeasure: { plan: planFireMeasure, apply: applyFireMeasure },
+  setWaterRestriction: { plan: planSetWaterRestriction, apply: applySetWaterRestriction },
 };
 
 function handlerFor(cmd: Command): Handler<Command> | undefined {
@@ -76,14 +85,14 @@ function handlerFor(cmd: Command): Handler<Command> | undefined {
 /** Plan a command without changing state. */
 export function planCommand(state: SimState, cmd: Command): CommandPlan {
   const h = handlerFor(cmd);
-  return h ? h.plan(state, cmd) : rejected('Unknown command.');
+  return h ? checkConstraints(state, cmd, h.plan(state, cmd)) : rejected('Unknown command.');
 }
 
 /** Plan and, if valid, apply a command, charging its cost. */
 export function executeCommand(state: SimState, cmd: Command): CommandPlan {
   const h = handlerFor(cmd);
   if (!h) return rejected('Unknown command.');
-  const plan = h.plan(state, cmd);
+  const plan = checkConstraints(state, cmd, h.plan(state, cmd));
   if (!plan.ok) return plan;
   h.apply(state, cmd, plan);
   state.cash -= plan.cost;
@@ -97,4 +106,5 @@ const LEDGER_LINE: Partial<Record<Command['type'], ExpenseLine>> = {
   combinePermits: 'maintenance',
   sendBottledWater: 'services',
   prepareEvent: 'services',
+  fireMeasure: 'services',
 };
